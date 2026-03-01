@@ -43,7 +43,7 @@ Check which account is active and whether it has write access to the repo:
 gh auth status
 ```
 
-If the active account is a bot/app account (e.g. `asos-*`) rather than the
+If the active account is a bot/app account (e.g. `something-*`) rather than the
 repo owner, switch to the correct user:
 
 ```bash
@@ -112,10 +112,10 @@ understand the current state of the code:
 
 Categorise every thread into one of three buckets:
 
-| Bucket | Meaning | Action |
-|--------|---------|--------|
-| **already-fixed** | The code concern is addressed; comment is just not resolved | Resolve the thread, no code change |
-| **needs-fix** | The issue is real and present in the current code | Apply the fix, then resolve |
+| Bucket             | Meaning                                                       | Action                                  |
+| ------------------ | ------------------------------------------------------------- | --------------------------------------- |
+| **already-fixed**  | The code concern is addressed; comment is just not resolved   | Resolve the thread, no code change      |
+| **needs-fix**      | The issue is real and present in the current code             | Apply the fix, then resolve             |
 | **not-applicable** | The suggestion is wrong, stale, or intentionally not followed | Resolve and leave a note explaining why |
 
 **When in doubt**, use `ask_user` before placing a thread in any bucket.

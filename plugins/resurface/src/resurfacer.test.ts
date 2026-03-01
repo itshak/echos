@@ -107,7 +107,7 @@ describe('resurfaceNotes', () => {
 
     // Insert an on_this_day note
     const now = new Date();
-    const pastYear = now.getFullYear() - 1;
+    const pastYear = now.getUTCFullYear() - 1;
     const month = String(now.getUTCMonth() + 1).padStart(2, '0');
     const day = String(now.getUTCDate()).padStart(2, '0');
     insertNote('on-this-day-note', { created: `${pastYear}-${month}-${day}T00:00:00Z` });
@@ -129,9 +129,9 @@ describe('resurfaceNotes', () => {
   it('deduplicates between forgotten and on_this_day in mix mode', () => {
     // Insert a note created on today's month-day in a prior year
     const now = new Date();
-    const pastYear = now.getFullYear() - 1;
-    const month = String(now.getMonth() + 1).padStart(2, '0');
-    const day = String(now.getDate()).padStart(2, '0');
+    const pastYear = now.getUTCFullYear() - 1;
+    const month = String(now.getUTCMonth() + 1).padStart(2, '0');
+    const day = String(now.getUTCDate()).padStart(2, '0');
     insertNote('overlap', { created: `${pastYear}-${month}-${day}T00:00:00Z` });
 
     const results = resurfaceNotes(storage, { mode: 'mix', limit: 10 });

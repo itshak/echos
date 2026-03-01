@@ -101,6 +101,31 @@ describe('resurfaceNotes', () => {
     expect(after.last_surfaced).not.toBeNull();
   });
 
+  it('mix mode includes on_this_day note even when enough forgotten notes exist', () => {
+    // Fill more forgotten notes than the limit
+    for (let i = 0; i < 5; i++) insertNote(`forgotten-${i}`);
+
+    // Insert an on_this_day note
+    const now = new Date();
+    const pastYear = now.getFullYear() - 1;
+    const month = String(now.getUTCMonth() + 1).padStart(2, '0');
+    const day = String(now.getUTCDate()).padStart(2, '0');
+    insertNote('on-this-day-note', { created: `${pastYear}-${month}-${day}T00:00:00Z` });
+
+    const results = resurfaceNotes(storage, { mode: 'mix', limit: 3 });
+    expect(results.some((r) => r.reason === 'on_this_day')).toBe(true);
+    expect(results.length).toBeLessThanOrEqual(3);
+  });
+
+  it('mix mode top-fills from forgotten when on_this_day is sparse', () => {
+    // 5 forgotten notes, no on_this_day notes
+    for (let i = 0; i < 5; i++) insertNote(`f-${i}`);
+
+    const results = resurfaceNotes(storage, { mode: 'mix', limit: 3 });
+    expect(results).toHaveLength(3);
+    expect(results.every((r) => r.reason === 'forgotten')).toBe(true);
+  });
+
   it('deduplicates between forgotten and on_this_day in mix mode', () => {
     // Insert a note created on today's month-day in a prior year
     const now = new Date();

@@ -35,8 +35,28 @@ export function resurfaceNotes(
 
   let rows: SurfacedNote[] = [];
 
+  type RawRow = {
+    id: string;
+    type: string;
+    title: string;
+    category: string;
+    tags: string;
+    gist: string | null;
+    created: string;
+    sourceUrl: string | null;
+  };
+
+  const toSurfaced = (r: RawRow, reason: SurfacedNote['reason']): SurfacedNote => ({
+    ...r,
+    tags: r.tags ? r.tags.split(',').filter(Boolean) : [],
+    reason,
+  });
+
+  // Fetch raw candidate rows for each active strategy (always up to `limit` so
+  // we have enough to top-up when one strategy is sparse).
+  let forgottenRaw: RawRow[] = [];
   if (mode === 'forgotten' || mode === 'mix') {
-    const forgottenRows = db
+    forgottenRaw = db
       .prepare(
         `SELECT id, type, title, category, tags, gist, created, source_url AS sourceUrl
          FROM notes
@@ -45,30 +65,14 @@ export function resurfaceNotes(
          ORDER BY last_surfaced ASC NULLS FIRST, created ASC
          LIMIT ?`,
       )
-      .all(thresholdIso, limit) as Array<{
-      id: string;
-      type: string;
-      title: string;
-      category: string;
-      tags: string;
-      gist: string | null;
-      created: string;
-      sourceUrl: string | null;
-    }>;
-
-    rows.push(
-      ...forgottenRows.map((r) => ({
-        ...r,
-        tags: r.tags ? r.tags.split(',').filter(Boolean) : [],
-        reason: 'forgotten' as const,
-      })),
-    );
+      .all(thresholdIso, limit) as RawRow[];
   }
 
+  let onThisDayRaw: RawRow[] = [];
   if (mode === 'on_this_day' || mode === 'mix') {
     // Compare month-day entirely in SQL using UTC (strftime on SQLite 'now' is UTC)
     // to avoid local-time vs stored-UTC mismatch around midnight.
-    const onThisDayRows = db
+    onThisDayRaw = db
       .prepare(
         `SELECT id, type, title, category, tags, gist, created, source_url AS sourceUrl
          FROM notes
@@ -79,31 +83,36 @@ export function resurfaceNotes(
          ORDER BY RANDOM()
          LIMIT ?`,
       )
-      .all(thresholdIso, limit) as Array<{
-      id: string;
-      type: string;
-      title: string;
-      category: string;
-      tags: string;
-      gist: string | null;
-      created: string;
-      sourceUrl: string | null;
-    }>;
-
-    // Deduplicate against already-selected forgotten rows
-    const existingIds = new Set(rows.map((r) => r.id));
-    rows.push(
-      ...onThisDayRows
-        .filter((r) => !existingIds.has(r.id))
-        .map((r) => ({
-          ...r,
-          tags: r.tags ? r.tags.split(',').filter(Boolean) : [],
-          reason: 'on_this_day' as const,
-        })),
-    );
+      .all(thresholdIso, limit) as RawRow[];
   }
 
-  if (mode === 'random') {
+  if (mode === 'forgotten') {
+    rows = forgottenRaw.map((r) => toSurfaced(r, 'forgotten'));
+  } else if (mode === 'on_this_day') {
+    rows = onThisDayRaw.map((r) => toSurfaced(r, 'on_this_day'));
+  } else if (mode === 'mix') {
+    // Allocate ~60 % to forgotten, ~40 % to on_this_day.
+    // If on_this_day is sparse, top up from the remaining forgotten rows so
+    // the result always fills `limit` when enough eligible notes exist.
+    const forgottenSlot = Math.ceil(limit * 0.6);
+
+    const forgottenChosen = forgottenRaw.slice(0, forgottenSlot);
+    rows.push(...forgottenChosen.map((r) => toSurfaced(r, 'forgotten')));
+
+    const seenIds = new Set(rows.map((r) => r.id));
+    const onThisDayChosen = onThisDayRaw.filter((r) => !seenIds.has(r.id));
+    rows.push(...onThisDayChosen.map((r) => toSurfaced(r, 'on_this_day')));
+
+    // Top up with remaining forgotten rows if on_this_day was sparse
+    if (rows.length < limit) {
+      const seenIdsNow = new Set(rows.map((r) => r.id));
+      const topUp = forgottenRaw
+        .slice(forgottenSlot)
+        .filter((r) => !seenIdsNow.has(r.id))
+        .slice(0, limit - rows.length);
+      rows.push(...topUp.map((r) => toSurfaced(r, 'forgotten')));
+    }
+  } else if (mode === 'random') {
     // For a personal knowledge base (hundreds to low thousands of notes),
     // ORDER BY RANDOM() is fast and gives a uniform distribution.
     const randomRows = db
@@ -115,22 +124,9 @@ export function resurfaceNotes(
          ORDER BY RANDOM()
          LIMIT ?`,
       )
-      .all(thresholdIso, limit) as Array<{
-      id: string;
-      type: string;
-      title: string;
-      category: string;
-      tags: string;
-      gist: string | null;
-      created: string;
-      sourceUrl: string | null;
-    }>;
+      .all(thresholdIso, limit) as RawRow[];
 
-    rows = randomRows.map((r) => ({
-      ...r,
-      tags: r.tags ? r.tags.split(',').filter(Boolean) : [],
-      reason: 'random' as const,
-    }));
+    rows = randomRows.map((r) => toSurfaced(r, 'random'));
   }
 
   // Trim to requested limit

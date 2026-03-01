@@ -70,7 +70,8 @@ export function resurfaceNotes(
     // Match notes from same month-day in any prior year
     const monthDay = `%-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}%`;
 
-    const onThisDayRows = db
+    // Use a rowid-bounded random sample to avoid full-table sort
+    const onThisDayCandidates = db
       .prepare(
         `SELECT id, type, title, category, tags, gist, created, source_url AS sourceUrl
          FROM notes
@@ -78,10 +79,10 @@ export function resurfaceNotes(
            AND strftime('%Y', created) < strftime('%Y', 'now')
            AND (status != 'archived' OR status IS NULL)
            AND (last_surfaced IS NULL OR last_surfaced < ?)
-         ORDER BY RANDOM()
-         LIMIT ?`,
+         ORDER BY rowid
+         LIMIT 50`,
       )
-      .all(monthDay, thresholdIso, mode === 'mix' ? Math.ceil(limit * 0.4) : limit) as Array<{
+      .all(monthDay, thresholdIso) as Array<{
       id: string;
       type: string;
       title: string;
@@ -91,6 +92,13 @@ export function resurfaceNotes(
       created: string;
       sourceUrl: string | null;
     }>;
+
+    // Shuffle candidates in JS to avoid ORDER BY RANDOM() full-table sort
+    for (let i = onThisDayCandidates.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [onThisDayCandidates[i], onThisDayCandidates[j]] = [onThisDayCandidates[j]!, onThisDayCandidates[i]!];
+    }
+    const onThisDayRows = onThisDayCandidates.slice(0, mode === 'mix' ? Math.ceil(limit * 0.4) : limit);
 
     // Deduplicate against already-selected forgotten rows
     const existingIds = new Set(rows.map((r) => r.id));
@@ -106,16 +114,17 @@ export function resurfaceNotes(
   }
 
   if (mode === 'random') {
-    const randomRows = db
+    // Fetch a bounded candidate set, then shuffle in JS to avoid full-table ORDER BY RANDOM()
+    const randomCandidates = db
       .prepare(
         `SELECT id, type, title, category, tags, gist, created, source_url AS sourceUrl
          FROM notes
          WHERE (last_surfaced IS NULL OR last_surfaced < ?)
            AND (status != 'archived' OR status IS NULL)
-         ORDER BY RANDOM()
-         LIMIT ?`,
+         ORDER BY rowid
+         LIMIT 50`,
       )
-      .all(thresholdIso, limit) as Array<{
+      .all(thresholdIso) as Array<{
       id: string;
       type: string;
       title: string;
@@ -126,7 +135,12 @@ export function resurfaceNotes(
       sourceUrl: string | null;
     }>;
 
-    rows = randomRows.map((r) => ({
+    for (let i = randomCandidates.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [randomCandidates[i], randomCandidates[j]] = [randomCandidates[j]!, randomCandidates[i]!];
+    }
+
+    rows = randomCandidates.slice(0, limit).map((r) => ({
       ...r,
       tags: r.tags ? r.tags.split(',').filter(Boolean) : [],
       reason: 'random' as const,
@@ -136,13 +150,12 @@ export function resurfaceNotes(
   // Trim to requested limit
   rows = rows.slice(0, limit);
 
-  // Update last_surfaced for selected notes
+  // Update last_surfaced for selected notes atomically in a single statement
   if (rows.length > 0) {
     const now = new Date().toISOString();
-    const updateStmt = db.prepare(`UPDATE notes SET last_surfaced = ? WHERE id = ?`);
-    for (const row of rows) {
-      updateStmt.run(now, row.id);
-    }
+    const ids = rows.map((row) => row.id);
+    const placeholders = ids.map(() => '?').join(', ');
+    db.prepare(`UPDATE notes SET last_surfaced = ? WHERE id IN (${placeholders})`).run(now, ...ids);
   }
 
   return rows;

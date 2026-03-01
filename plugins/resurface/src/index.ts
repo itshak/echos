@@ -26,7 +26,7 @@ const plugin: EchosPlugin = {
               config?.['limit'] != null &&
               Number.isFinite(Number(config['limit'])) &&
               Number(config['limit']) > 0
-                ? Math.min(Number(config['limit']), 10)
+                ? Math.min(Math.floor(Number(config['limit'])), 10)
                 : DEFAULT_LIMIT;
 
             const mode =

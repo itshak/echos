@@ -45,7 +45,7 @@ export function resurfaceNotes(
          ORDER BY last_surfaced ASC NULLS FIRST, created ASC
          LIMIT ?`,
       )
-      .all(thresholdIso, mode === 'mix' ? Math.ceil(limit * 0.6) : limit) as Array<{
+      .all(thresholdIso, limit) as Array<{
       id: string;
       type: string;
       title: string;
@@ -66,24 +66,20 @@ export function resurfaceNotes(
   }
 
   if (mode === 'on_this_day' || mode === 'mix') {
-    const now = new Date();
-    // Match notes from same month-day in any prior year
-    const monthDay = `%-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}%`;
-
-    // on_this_day results are filtered to a specific calendar date so the
-    // candidate set is small; ORDER BY RANDOM() is fast and gives uniform picks.
+    // Compare month-day entirely in SQL using UTC (strftime on SQLite 'now' is UTC)
+    // to avoid local-time vs stored-UTC mismatch around midnight.
     const onThisDayRows = db
       .prepare(
         `SELECT id, type, title, category, tags, gist, created, source_url AS sourceUrl
          FROM notes
-         WHERE created LIKE ?
+         WHERE strftime('%m-%d', created) = strftime('%m-%d', 'now')
            AND strftime('%Y', created) < strftime('%Y', 'now')
            AND (status != 'archived' OR status IS NULL)
            AND (last_surfaced IS NULL OR last_surfaced < ?)
          ORDER BY RANDOM()
          LIMIT ?`,
       )
-      .all(monthDay, thresholdIso, mode === 'mix' ? Math.ceil(limit * 0.4) : limit) as Array<{
+      .all(thresholdIso, limit) as Array<{
       id: string;
       type: string;
       title: string;

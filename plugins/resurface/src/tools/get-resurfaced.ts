@@ -37,7 +37,7 @@ export function createGetResurfacedTool(context: PluginContext): AgentTool<typeo
     parameters: schema,
     execute: async (_toolCallId, params: Params) => {
       const { sqlite } = context;
-      const limit = Math.min(params.limit ?? 3, 10);
+      const limit = Math.min(Math.floor(params.limit ?? 3), 10);
       const mode = params.mode ?? 'mix';
 
       const notes = resurfaceNotes(sqlite, { limit, mode });

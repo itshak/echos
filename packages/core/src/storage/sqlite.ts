@@ -312,6 +312,10 @@ export function createSqliteStorage(dbPath: string, logger: Logger): SqliteStora
   } catch {
     // Column already exists — that's fine
   }
+  // Index for resurfacing queries that filter/order by last_surfaced
+  db.exec(
+    `CREATE INDEX IF NOT EXISTS idx_notes_status_last_surfaced ON notes(status, last_surfaced)`,
+  );
 
   logger.info({ dbPath }, 'SQLite database initialized');
 

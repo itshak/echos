@@ -376,6 +376,7 @@ See [Categorization](/categorization) for detailed documentation.
 | Twitter | `@echos/plugin-twitter` | Tweet/thread extraction via FxTwitter API |
 | Image | `@echos/plugin-image` | Image storage with metadata extraction (Sharp) |
 | Resurface | `@echos/plugin-resurface` | Knowledge resurfacing via spaced repetition and on-this-day discovery |
+| Journal | `@echos/plugin-journal` | Dedicated journaling, AI reflection, and daily prompts |
 
 ### Twitter Plugin
 
@@ -513,3 +514,62 @@ Schedule a weekly knowledge rediscovery every Sunday at 10am, 5 notes.
 |-----|------|---------|-------------|
 | `mode` | `'forgotten' \| 'on_this_day' \| 'random' \| 'mix'` | `'mix'` | Resurfacing strategy |
 | `limit` | number | `3` | Number of notes to broadcast (max 10) |
+
+### Journal Plugin
+
+The journal plugin (`@echos/plugin-journal`) provides a dedicated journaling experience with two agent tools and an optional daily prompt job.
+
+**Features:**
+- Dedicated `journal` tool for creating journal/diary entries (replaces `create_note(type="journal")`)
+- AI-powered `reflect` tool that synthesizes journal entries over a time period
+- Optional `journal_prompt` scheduled job for daily journaling nudges via Telegram
+
+**Tool: journal**
+
+```typescript
+{
+  title: string;                          // Entry title (required)
+  content: string;                        // Markdown content (required)
+  tags?: string[];                        // Tags for categorization
+  category?: string;                      // Category (e.g. "reflection", "work", "health")
+  inputSource?: 'text' | 'voice';         // How the entry was captured (default: 'text')
+}
+```
+
+All journal entries are stored with `type: 'journal'` and `status: 'read'`. After creating, the agent always calls `categorize_note` for automatic tagging.
+
+**Tool: reflect**
+
+```typescript
+{
+  period?: 'week' | 'month' | 'custom';   // Time period (default: 'week')
+  dateFrom?: string;                       // Start date for custom range (ISO 8601)
+  dateTo?: string;                         // End date for custom range (ISO 8601)
+}
+```
+
+The reflect tool:
+- Fetches journal entries within the date range (up to 50 entries)
+- Spawns a sub-agent to synthesize patterns, mood trends, key themes, and insights
+- Returns a warm, structured reflection with actionable suggestions
+- Validates date ranges (max 365 days lookback)
+
+**Trigger phrases** the agent recognises:
+- "reflect on my journal"
+- "weekly journal review"
+- "how has my week been?"
+- "mood summary"
+- "look back at my journaling"
+
+**Setting up the daily prompt:**
+
+Tell the agent:
+> *"Schedule a daily journal prompt at 9pm."*
+
+The agent will create a `journal_prompt` schedule with cron `0 21 * * *`.
+
+**Scheduler config options:**
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `prompt` | string | Built-in journaling nudge | Custom prompt text (max 1000 chars) |

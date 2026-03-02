@@ -30,7 +30,8 @@
       "@echos/scheduler": ["./packages/scheduler/src/index.ts"],
       "@echos/plugin-youtube": ["./plugins/youtube/src/index.ts"],
       "@echos/plugin-article": ["./plugins/article/src/index.ts"],
-      "@echos/plugin-twitter": ["./plugins/twitter/src/index.ts"]
+      "@echos/plugin-twitter": ["./plugins/twitter/src/index.ts"],
+      "@echos/plugin-journal": ["./plugins/journal/src/index.ts"]
     }
   },
   "exclude": ["node_modules", "dist", "data"]

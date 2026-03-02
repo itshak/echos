@@ -31,6 +31,7 @@ import articlePlugin from '@echos/plugin-article';
 import youtubePlugin from '@echos/plugin-youtube';
 import twitterPlugin from '@echos/plugin-twitter';
 import resurfacePlugin from '@echos/plugin-resurface';
+import journalPlugin from '@echos/plugin-journal';
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -74,6 +75,7 @@ async function runCli(): Promise<void> {
   pluginRegistry.register(youtubePlugin);
   pluginRegistry.register(twitterPlugin);
   pluginRegistry.register(resurfacePlugin);
+  pluginRegistry.register(journalPlugin);
 
   await pluginRegistry.setupAll({
     sqlite,

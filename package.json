@@ -67,6 +67,7 @@
     "@echos/plugin-digest": "workspace:*",
     "@echos/plugin-twitter": "workspace:*",
     "@echos/plugin-resurface": "workspace:*",
+    "@echos/plugin-journal": "workspace:*",
     "tsx": "^4.21.0"
   },
   "devDependencies": {

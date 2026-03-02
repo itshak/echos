@@ -45,16 +45,11 @@ function getAllNotesWithTag(
   sqlite: SqliteStorage,
   tag: string,
 ): Array<{ id: string; filePath: string }> {
-  const results: Array<{ id: string; filePath: string }> = [];
   const pageSize = 1000;
-  let offset = 0;
-  while (true) {
-    const page = sqlite.listNotes({ tags: [tag], limit: pageSize, offset });
-    for (const note of page) {
-      results.push({ id: note.id, filePath: note.filePath });
-    }
-    if (page.length < pageSize) break;
-    offset += page.length;
+  const page = sqlite.listNotes({ tags: [tag], limit: pageSize });
+  const results: Array<{ id: string; filePath: string }> = [];
+  for (const note of page) {
+    results.push({ id: note.id, filePath: note.filePath });
   }
   return results;
 }

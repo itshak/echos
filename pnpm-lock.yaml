@@ -99,6 +99,9 @@ importers:
       '@echos/plugin-article':
         specifier: workspace:*
         version: link:../../plugins/article
+      '@echos/plugin-resurface':
+        specifier: workspace:*
+        version: link:../../plugins/resurface
       '@echos/plugin-twitter':
         specifier: workspace:*
         version: link:../../plugins/twitter

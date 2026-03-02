@@ -100,11 +100,11 @@ describe('buildSystemPrompt', () => {
 });
 
 describe('tool descriptions contain moved instructions', () => {
-  it('create_note: categorize after creating, voice, journal guidance, excludes URLs', () => {
+  it('create_note: categorize after creating, voice guidance, excludes URLs and journal', () => {
     const desc = createNoteTool(stubDeps).description;
     expect(desc).toContain('categorize_note');
     expect(desc).toContain('inputSource="voice"');
-    expect(desc).toContain('type="journal"');
+    expect(desc).toContain('journal tool');
     expect(desc).toContain('Do NOT use for URLs');
   });
 

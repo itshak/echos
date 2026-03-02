@@ -17,8 +17,8 @@ const schema = Type.Object({
   title: Type.String({ description: 'Note title', minLength: 1 }),
   content: Type.String({ description: 'Note content in markdown' }),
   type: Type.Optional(
-    Type.Union([Type.Literal('note'), Type.Literal('journal')], {
-      description: 'Note type',
+    Type.Literal('note', {
+      description: 'Note type (always "note"). For journal entries use the journal tool.',
       default: 'note',
     }),
   ),
@@ -41,7 +41,7 @@ export function createNoteTool(deps: CreateNoteToolDeps): AgentTool<typeof schem
     name: 'create_note',
     label: 'Create Note',
     description:
-      'Create a new note, journal entry, or any text the user wants to save. Do NOT use for URLs — use save_article, save_tweet, or save_youtube instead. After creating, ALWAYS call categorize_note (mode="lightweight") to assign category and tags. Use type="journal" for diary entries. For voice transcriptions pass inputSource="voice". Journal categories should reflect the topic (e.g. "reflection", "work", "health").',
+      'Create a new note or any text the user wants to save. Do NOT use for URLs — use save_article, save_tweet, or save_youtube instead. Do NOT use for journal/diary entries — use the journal tool instead. After creating, ALWAYS call categorize_note (mode="lightweight") to assign category and tags. For voice transcriptions pass inputSource="voice".',
     parameters: schema,
     execute: async (_toolCallId, params: Params) => {
       const now = new Date().toISOString();

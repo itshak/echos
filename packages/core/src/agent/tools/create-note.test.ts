@@ -89,7 +89,7 @@ describe('create_note tool', () => {
     expect(row!.category).toBe('uncategorized');
   });
 
-  it('should create a journal entry', async () => {
+  it('should default type to "note" even when type is explicitly passed', async () => {
     const tool = createNoteTool({
       sqlite,
       markdown,
@@ -98,13 +98,13 @@ describe('create_note tool', () => {
     });
 
     const result = await tool.execute('tc3', {
-      title: 'Daily Journal',
-      content: 'Today was a good day.',
-      type: 'journal',
+      title: 'Typed Note',
+      content: 'Testing type default.',
+      type: 'note',
     });
 
     const id = (result.details as { id: string }).id;
     const row = sqlite.getNote(id);
-    expect(row!.type).toBe('journal');
+    expect(row!.type).toBe('note');
   });
 });

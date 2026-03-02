@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { createSqliteStorage, type SqliteStorage } from './sqlite.js';
-import { createLogger } from '@echos/shared';
+import { createLogger, ValidationError } from '@echos/shared';
 import type { NoteMetadata, ReminderEntry, MemoryEntry } from '@echos/shared';
 
 const logger = createLogger('test', 'silent');
@@ -440,5 +440,149 @@ describe('SQLite Job Schedules', () => {
 
     // Deleting non-existent schedule returns false
     expect(storage.deleteSchedule('missing')).toBe(false);
+  });
+});
+
+describe('SQLite Tag Management', () => {
+  it('getTopTagsWithCounts returns tags ranked by frequency', () => {
+    storage.upsertNote(makeMeta({ id: 'a', tags: ['javascript', 'typescript'] }), '', '/a.md');
+    storage.upsertNote(makeMeta({ id: 'b', tags: ['javascript', 'react'] }), '', '/b.md');
+    storage.upsertNote(makeMeta({ id: 'c', tags: ['react'] }), '', '/c.md');
+
+    const tags = storage.getTopTagsWithCounts(500);
+    expect(tags.find((t) => t.tag === 'javascript')?.count).toBe(2);
+    expect(tags.find((t) => t.tag === 'react')?.count).toBe(2);
+    expect(tags.find((t) => t.tag === 'typescript')?.count).toBe(1);
+    // ranked by count descending
+    expect(tags[0]!.count).toBeGreaterThanOrEqual(tags[1]!.count);
+  });
+
+  it('getTopTagsWithCounts counts distinct notes, not tag occurrences', () => {
+    // A single note with duplicate tags should count as 1, not 2
+    storage.upsertNote(makeMeta({ id: 'a', tags: ['js', 'js'] }), '', '/a.md');
+    storage.upsertNote(makeMeta({ id: 'b', tags: ['js'] }), '', '/b.md');
+
+    const tags = storage.getTopTagsWithCounts(500);
+    // 2 distinct notes have 'js', even though note 'a' has it twice
+    expect(tags.find((t) => t.tag === 'js')?.count).toBe(2);
+  });
+
+  it('getTopTagsWithCounts limits results in SQL', () => {
+    storage.upsertNote(makeMeta({ id: 'a', tags: ['a', 'b', 'c', 'd', 'e'] }), '', '/a.md');
+
+    const top2 = storage.getTopTagsWithCounts(2);
+    expect(top2).toHaveLength(2);
+  });
+
+  it('renameTag renames a tag across all notes', () => {
+    storage.upsertNote(makeMeta({ id: 'a', tags: ['js', 'react'] }), '', '/a.md');
+    storage.upsertNote(makeMeta({ id: 'b', tags: ['js'] }), '', '/b.md');
+    storage.upsertNote(makeMeta({ id: 'c', tags: ['typescript'] }), '', '/c.md');
+
+    const affected = storage.renameTag('js', 'javascript');
+    expect(affected).toBe(2);
+
+    const a = storage.getNote('a');
+    expect(a!.tags.split(',').sort()).toEqual(['javascript', 'react'].sort());
+
+    const b = storage.getNote('b');
+    expect(b!.tags).toBe('javascript');
+
+    // unaffected note unchanged
+    const c = storage.getNote('c');
+    expect(c!.tags).toBe('typescript');
+  });
+
+  it('renameTag does not match substrings (e.g. "js" does not match "nodejs")', () => {
+    storage.upsertNote(makeMeta({ id: 'a', tags: ['nodejs', 'js'] }), '', '/a.md');
+
+    storage.renameTag('js', 'javascript');
+
+    const a = storage.getNote('a');
+    const tagList = a!.tags.split(',').sort();
+    expect(tagList).toContain('javascript');
+    expect(tagList).toContain('nodejs');
+    expect(tagList).not.toContain('nodejsavascript');
+  });
+
+  it('renameTag deduplicates when target tag already exists on the note', () => {
+    storage.upsertNote(makeMeta({ id: 'a', tags: ['js', 'javascript'] }), '', '/a.md');
+
+    storage.renameTag('js', 'javascript');
+
+    const a = storage.getNote('a');
+    const tagList = a!.tags.split(',').filter(Boolean);
+    // should have exactly one 'javascript', not two
+    expect(tagList.filter((t) => t === 'javascript')).toHaveLength(1);
+  });
+
+  it('renameTag returns 0 when tag does not exist', () => {
+    storage.upsertNote(makeMeta({ id: 'a', tags: ['typescript'] }), '', '/a.md');
+    expect(storage.renameTag('nonexistent', 'other')).toBe(0);
+  });
+
+  it('mergeTags consolidates multiple source tags into one', () => {
+    storage.upsertNote(makeMeta({ id: 'a', tags: ['react'] }), '', '/a.md');
+    storage.upsertNote(makeMeta({ id: 'b', tags: ['reactjs'] }), '', '/b.md');
+    storage.upsertNote(makeMeta({ id: 'c', tags: ['react-library'] }), '', '/c.md');
+
+    const affected = storage.mergeTags(['react', 'reactjs', 'react-library'], 'react');
+    expect(affected).toBe(2); // only b and c needed renaming
+
+    expect(storage.getNote('b')!.tags).toBe('react');
+    expect(storage.getNote('c')!.tags).toBe('react');
+    expect(storage.getNote('a')!.tags).toBe('react'); // unchanged
+  });
+
+  it('mergeTags skips the into tag to avoid self-rename', () => {
+    storage.upsertNote(makeMeta({ id: 'a', tags: ['react'] }), '', '/a.md');
+    // should not try to rename 'react' to 'react', returning 0 changes for that step
+    const affected = storage.mergeTags(['react'], 'react');
+    expect(affected).toBe(0);
+    expect(storage.getNote('a')!.tags).toBe('react');
+  });
+
+  it('renameTag is safe when tag contains SQL wildcard characters (% or _)', () => {
+    // A tag containing '%' must not match other tags via LIKE wildcard expansion
+    storage.upsertNote(makeMeta({ id: 'a', tags: ['100%'] }), '', '/a.md');
+    storage.upsertNote(makeMeta({ id: 'b', tags: ['100x'] }), '', '/b.md');
+
+    // renaming '100%' should only affect note 'a', not 'b'
+    const affected = storage.renameTag('100%', 'perfect');
+    expect(affected).toBe(1);
+    expect(storage.getNote('a')!.tags).toBe('perfect');
+    expect(storage.getNote('b')!.tags).toBe('100x');
+  });
+
+  it('listNotes tag filter is safe when tag contains SQL wildcard characters', () => {
+    storage.upsertNote(makeMeta({ id: 'a', tags: ['100%'] }), '', '/a.md');
+    storage.upsertNote(makeMeta({ id: 'b', tags: ['100x'] }), '', '/b.md');
+
+    // filtering by '100%' should return only note 'a', not 'b'
+    const results = storage.listNotes({ tags: ['100%'] });
+    expect(results).toHaveLength(1);
+    expect(results[0]!.id).toBe('a');
+  });
+
+  it('FTS index stays in sync after renameTag', () => {
+    storage.upsertNote(makeMeta({ id: 'a', tags: ['js'] }), 'content', '/a.md');
+
+    storage.renameTag('js', 'javascript');
+
+    // FTS search by new tag should find the note
+    const results = storage.searchFts('javascript');
+    expect(results.some((r) => r.id === 'a')).toBe(true);
+  });
+
+  it('upsertNote rejects tags containing commas', () => {
+    expect(() =>
+      storage.upsertNote(makeMeta({ id: 'a', tags: ['valid', 'in,valid'] }), 'content', '/a.md'),
+    ).toThrow(ValidationError);
+  });
+
+  it('upsertNote rejects a tag that is itself only a comma', () => {
+    expect(() =>
+      storage.upsertNote(makeMeta({ id: 'a', tags: [','] }), 'content', '/a.md'),
+    ).toThrow(ValidationError);
   });
 });

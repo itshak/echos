@@ -8,6 +8,7 @@ import type {
   MemoryEntry,
   ScheduleEntry,
 } from '@echos/shared';
+import { ValidationError } from '@echos/shared';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 
@@ -37,6 +38,10 @@ export interface SqliteStorage {
   listAllMemories(): MemoryEntry[];
   listTopMemories(limit: number): MemoryEntry[];
   searchMemory(query: string): MemoryEntry[];
+  // Tag management
+  getTopTagsWithCounts(limit: number): { tag: string; count: number }[];
+  renameTag(from: string, to: string): number;
+  mergeTags(tags: string[], into: string): number;
   // User preferences
   getAgentVoice(): string | null;
   setAgentVoice(instruction: string): void;
@@ -395,12 +400,78 @@ export function createSqliteStorage(dbPath: string, logger: Logger): SqliteStora
       VALUES (?, ?, ?)
       ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated=excluded.updated
     `),
+    getTopTagsWithCounts: db.prepare(`
+      WITH RECURSIVE
+        all_tags(rowid, tag, rest) AS (
+          SELECT
+            rowid,
+            CASE WHEN instr(tags || ',', ',') > 0
+                 THEN substr(tags || ',', 1, instr(tags || ',', ',') - 1)
+                 ELSE tags END,
+            CASE WHEN instr(tags || ',', ',') > 0
+                 THEN substr(tags || ',', instr(tags || ',', ',') + 1)
+                 ELSE '' END
+          FROM notes WHERE tags != ''
+          UNION ALL
+          SELECT
+            rowid,
+            CASE WHEN instr(rest, ',') > 0
+                 THEN substr(rest, 1, instr(rest, ',') - 1)
+                 ELSE rest END,
+            CASE WHEN instr(rest, ',') > 0
+                 THEN substr(rest, instr(rest, ',') + 1)
+                 ELSE '' END
+          FROM all_tags WHERE rest != ''
+        )
+      SELECT tag, COUNT(DISTINCT rowid) as count
+      FROM all_tags WHERE tag != ''
+      GROUP BY tag ORDER BY count DESC, tag ASC
+      LIMIT ?
+    `),
+    renameTag: db.prepare(`
+      UPDATE notes
+      SET tags = (
+            WITH RECURSIVE
+              split(tag, rest) AS (
+                SELECT
+                  CASE WHEN instr(tags || ',', ',') > 0
+                       THEN substr(tags || ',', 1, instr(tags || ',', ',') - 1)
+                       ELSE tags END,
+                  CASE WHEN instr(tags || ',', ',') > 0
+                       THEN substr(tags || ',', instr(tags || ',', ',') + 1)
+                       ELSE '' END
+                UNION ALL
+                SELECT
+                  CASE WHEN instr(rest, ',') > 0
+                       THEN substr(rest, 1, instr(rest, ',') - 1)
+                       ELSE rest END,
+                  CASE WHEN instr(rest, ',') > 0
+                       THEN substr(rest, instr(rest, ',') + 1)
+                       ELSE '' END
+                FROM split WHERE rest != ''
+              )
+            SELECT GROUP_CONCAT(mapped_tag)
+            FROM (
+              SELECT DISTINCT CASE WHEN tag = ? THEN ? ELSE tag END AS mapped_tag
+              FROM split
+              WHERE tag != ''
+              ORDER BY LOWER(mapped_tag)
+            )
+          ),
+          updated = ?
+      WHERE INSTR(',' || tags || ',', ',' || ? || ',') > 0
+    `),
   };
 
   return {
     db,
 
     upsertNote(meta: NoteMetadata, content: string, filePath: string, contentHash?: string): void {
+      for (const tag of meta.tags ?? []) {
+        if (tag.includes(',')) {
+          throw new ValidationError(`Tag "${tag}" must not contain commas`);
+        }
+      }
       stmts.upsertNote.run({
         id: meta.id,
         type: meta.type,
@@ -465,8 +536,8 @@ export function createSqliteStorage(dbPath: string, logger: Logger): SqliteStora
       }
       if (opts.tags && opts.tags.length > 0) {
         for (const tag of opts.tags) {
-          conditions.push("(',' || tags || ',') LIKE ?");
-          params.push(`%,${tag},%`);
+          conditions.push("INSTR(',' || tags || ',', ',' || ? || ',') > 0");
+          params.push(tag);
         }
       }
 
@@ -616,6 +687,36 @@ export function createSqliteStorage(dbPath: string, logger: Logger): SqliteStora
       }
 
       return results.sort((a, b) => b.confidence - a.confidence);
+    },
+
+    getTopTagsWithCounts(limit: number): { tag: string; count: number }[] {
+      return stmts.getTopTagsWithCounts.all(limit) as { tag: string; count: number }[];
+    },
+
+    renameTag(from: string, to: string): number {
+      const now = new Date().toISOString();
+      const info = stmts.renameTag.run(from, to, now, from) as Database.RunResult;
+      return info.changes;
+    },
+
+    /**
+     * Merge multiple source tags into a single target tag.
+     *
+     * Returns the total number of UPDATE operations (rows affected) across all
+     * tag renames. If a single note contains multiple source tags, it may be
+     * updated multiple times and therefore counted multiple times in this total.
+     */
+    mergeTags(tags: string[], into: string): number {
+      return db.transaction((): number => {
+        const now = new Date().toISOString();
+        let totalUpdates = 0;
+        for (const from of tags) {
+          if (from === into) continue;
+          const info = stmts.renameTag.run(from, into, now, from) as Database.RunResult;
+          totalUpdates += info.changes;
+        }
+        return totalUpdates;
+      })();
     },
 
     getAgentVoice(): string | null {

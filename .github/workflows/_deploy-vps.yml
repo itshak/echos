@@ -21,6 +21,9 @@ on:
       WEB_PORT:
         required: false
 
+permissions:
+  contents: read
+
 jobs:
   deploy:
     name: Deploy to VPS

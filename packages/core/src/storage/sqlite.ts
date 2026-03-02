@@ -725,16 +725,23 @@ export function createSqliteStorage(dbPath: string, logger: Logger): SqliteStora
       return info.changes;
     },
 
+    /**
+     * Merge multiple source tags into a single target tag.
+     *
+     * Returns the total number of UPDATE operations (rows affected) across all
+     * tag renames. If a single note contains multiple source tags, it may be
+     * updated multiple times and therefore counted multiple times in this total.
+     */
     mergeTags(tags: string[], into: string): number {
       return db.transaction((): number => {
         const now = new Date().toISOString();
-        let total = 0;
+        let totalUpdates = 0;
         for (const from of tags) {
           if (from === into) continue;
           const info = stmts.renameTag.run(from, into, now, from) as Database.RunResult;
-          total += info.changes;
+          totalUpdates += info.changes;
         }
-        return total;
+        return totalUpdates;
       })();
     },
 

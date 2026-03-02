@@ -22,11 +22,21 @@ const schema = Type.Object({
   ),
   into: Type.Optional(Type.String({ description: 'Target tag to merge into (merge action)' })),
   limit: Type.Optional(
-    Type.Number({ description: 'Max tags to return for list action (default 100)' }),
+    Type.Number({
+      description: 'Max tags to return for list action (default 100, min 1, max 500)',
+      minimum: 1,
+      maximum: 500,
+    }),
   ),
 });
 
 type Params = Static<typeof schema>;
+
+function validateTagValue(value: string, fieldName: string): void {
+  if (value.includes(',')) {
+    throw new ValidationError(`"${fieldName}" must not contain commas`);
+  }
+}
 
 export function createManageTagsTool(deps: ManageTagsToolDeps): AgentTool<typeof schema> {
   return {
@@ -37,9 +47,8 @@ export function createManageTagsTool(deps: ManageTagsToolDeps): AgentTool<typeof
     parameters: schema,
     execute: async (_toolCallId, params: Params) => {
       if (params.action === 'list') {
-        const limit = params.limit ?? 100;
-        const allTags = deps.sqlite.getAllTagsWithCounts();
-        const tags = allTags.slice(0, limit);
+        const limit = Math.min(Math.max(1, params.limit ?? 100), 500);
+        const tags = deps.sqlite.getTopTagsWithCounts(limit);
 
         if (tags.length === 0) {
           return {
@@ -49,19 +58,14 @@ export function createManageTagsTool(deps: ManageTagsToolDeps): AgentTool<typeof
         }
 
         const lines = tags.map(({ tag, count }) => `- **${tag}** (${count} note${count === 1 ? '' : 's'})`);
-        const hasMore = allTags.length > limit;
-        const summary = hasMore
-          ? `Showing ${limit} of ${allTags.length} tags (total unique tags: ${allTags.length}):`
-          : `${allTags.length} unique tag${allTags.length === 1 ? '' : 's'} in your knowledge base:`;
-
         return {
           content: [
             {
               type: 'text' as const,
-              text: `${summary}\n\n${lines.join('\n')}`,
+              text: `${tags.length} tag${tags.length === 1 ? '' : 's'} in your knowledge base:\n\n${lines.join('\n')}`,
             },
           ],
-          details: { total: allTags.length, tags },
+          details: { total: tags.length, tags },
         };
       }
 
@@ -74,6 +78,8 @@ export function createManageTagsTool(deps: ManageTagsToolDeps): AgentTool<typeof
         if (!from || !to) {
           throw new ValidationError('"from" and "to" must be non-empty strings');
         }
+        validateTagValue(from, 'from');
+        validateTagValue(to, 'to');
         if (from === to) {
           return {
             content: [
@@ -106,9 +112,13 @@ export function createManageTagsTool(deps: ManageTagsToolDeps): AgentTool<typeof
           throw new ValidationError('merge action requires an "into" parameter specifying the target tag');
         }
         const into = params.into.toLowerCase().trim();
-        const tags = params.tags.map((t) => t.toLowerCase().trim()).filter(Boolean);
         if (!into) {
           throw new ValidationError('"into" must be a non-empty string');
+        }
+        validateTagValue(into, 'into');
+        const tags = params.tags.map((t) => t.toLowerCase().trim()).filter(Boolean);
+        for (const t of tags) {
+          validateTagValue(t, 'tags');
         }
 
         const affected = deps.sqlite.mergeTags(tags, into);

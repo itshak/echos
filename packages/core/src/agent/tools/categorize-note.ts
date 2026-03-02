@@ -56,7 +56,7 @@ export function createCategorizeNoteTool(deps: CategorizeNoteToolDeps): AgentToo
           (model.provider as string) === 'anthropic'
             ? (deps.anthropicApiKey ?? '')
             : (deps.llmApiKey ?? '');
-        const vocabulary = deps.sqlite.getAllTagsWithCounts().slice(0, 50);
+        const vocabulary = deps.sqlite.getTopTagsWithCounts(50);
         const result = await categorizeContent(
           noteRow.title,
           noteRow.content,

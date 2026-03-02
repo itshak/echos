@@ -442,3 +442,112 @@ describe('SQLite Job Schedules', () => {
     expect(storage.deleteSchedule('missing')).toBe(false);
   });
 });
+
+describe('SQLite Tag Management', () => {
+  it('getAllTagsWithCounts returns tags ranked by frequency', () => {
+    storage.upsertNote(makeMeta({ id: 'a', tags: ['javascript', 'typescript'] }), '', '/a.md');
+    storage.upsertNote(makeMeta({ id: 'b', tags: ['javascript', 'react'] }), '', '/b.md');
+    storage.upsertNote(makeMeta({ id: 'c', tags: ['react'] }), '', '/c.md');
+
+    const tags = storage.getAllTagsWithCounts();
+    expect(tags.find((t) => t.tag === 'javascript')?.count).toBe(2);
+    expect(tags.find((t) => t.tag === 'react')?.count).toBe(2);
+    expect(tags.find((t) => t.tag === 'typescript')?.count).toBe(1);
+    // ranked by count descending
+    expect(tags[0]!.count).toBeGreaterThanOrEqual(tags[1]!.count);
+  });
+
+  it('getAllTagsWithCounts counts distinct notes, not tag occurrences', () => {
+    // Note with duplicate tags (edge case) should count as 1
+    storage.upsertNote(makeMeta({ id: 'a', tags: ['js'] }), '', '/a.md');
+    storage.upsertNote(makeMeta({ id: 'b', tags: ['js'] }), '', '/b.md');
+
+    const tags = storage.getAllTagsWithCounts();
+    expect(tags.find((t) => t.tag === 'js')?.count).toBe(2);
+  });
+
+  it('getTopTagsWithCounts limits results in SQL', () => {
+    storage.upsertNote(makeMeta({ id: 'a', tags: ['a', 'b', 'c', 'd', 'e'] }), '', '/a.md');
+
+    const top2 = storage.getTopTagsWithCounts(2);
+    expect(top2).toHaveLength(2);
+  });
+
+  it('renameTag renames a tag across all notes', () => {
+    storage.upsertNote(makeMeta({ id: 'a', tags: ['js', 'react'] }), '', '/a.md');
+    storage.upsertNote(makeMeta({ id: 'b', tags: ['js'] }), '', '/b.md');
+    storage.upsertNote(makeMeta({ id: 'c', tags: ['typescript'] }), '', '/c.md');
+
+    const affected = storage.renameTag('js', 'javascript');
+    expect(affected).toBe(2);
+
+    const a = storage.getNote('a');
+    expect(a!.tags.split(',').sort()).toEqual(['javascript', 'react'].sort());
+
+    const b = storage.getNote('b');
+    expect(b!.tags).toBe('javascript');
+
+    // unaffected note unchanged
+    const c = storage.getNote('c');
+    expect(c!.tags).toBe('typescript');
+  });
+
+  it('renameTag does not match substrings (e.g. "js" does not match "nodejs")', () => {
+    storage.upsertNote(makeMeta({ id: 'a', tags: ['nodejs', 'js'] }), '', '/a.md');
+
+    storage.renameTag('js', 'javascript');
+
+    const a = storage.getNote('a');
+    const tagList = a!.tags.split(',').sort();
+    expect(tagList).toContain('javascript');
+    expect(tagList).toContain('nodejs');
+    expect(tagList).not.toContain('nodejsavascript');
+  });
+
+  it('renameTag deduplicates when target tag already exists on the note', () => {
+    storage.upsertNote(makeMeta({ id: 'a', tags: ['js', 'javascript'] }), '', '/a.md');
+
+    storage.renameTag('js', 'javascript');
+
+    const a = storage.getNote('a');
+    const tagList = a!.tags.split(',').filter(Boolean);
+    // should have exactly one 'javascript', not two
+    expect(tagList.filter((t) => t === 'javascript')).toHaveLength(1);
+  });
+
+  it('renameTag returns 0 when tag does not exist', () => {
+    storage.upsertNote(makeMeta({ id: 'a', tags: ['typescript'] }), '', '/a.md');
+    expect(storage.renameTag('nonexistent', 'other')).toBe(0);
+  });
+
+  it('mergeTags consolidates multiple source tags into one', () => {
+    storage.upsertNote(makeMeta({ id: 'a', tags: ['react'] }), '', '/a.md');
+    storage.upsertNote(makeMeta({ id: 'b', tags: ['reactjs'] }), '', '/b.md');
+    storage.upsertNote(makeMeta({ id: 'c', tags: ['react-library'] }), '', '/c.md');
+
+    const affected = storage.mergeTags(['react', 'reactjs', 'react-library'], 'react');
+    expect(affected).toBe(2); // only b and c needed renaming
+
+    expect(storage.getNote('b')!.tags).toBe('react');
+    expect(storage.getNote('c')!.tags).toBe('react');
+    expect(storage.getNote('a')!.tags).toBe('react'); // unchanged
+  });
+
+  it('mergeTags skips the into tag to avoid self-rename', () => {
+    storage.upsertNote(makeMeta({ id: 'a', tags: ['react'] }), '', '/a.md');
+    // should not try to rename 'react' to 'react', returning 0 changes for that step
+    const affected = storage.mergeTags(['react'], 'react');
+    expect(affected).toBe(0);
+    expect(storage.getNote('a')!.tags).toBe('react');
+  });
+
+  it('FTS index stays in sync after renameTag', () => {
+    storage.upsertNote(makeMeta({ id: 'a', tags: ['js'] }), 'content', '/a.md');
+
+    storage.renameTag('js', 'javascript');
+
+    // FTS search by new tag should find the note
+    const results = storage.searchFts('javascript');
+    expect(results.some((r) => r.id === 'a')).toBe(true);
+  });
+});

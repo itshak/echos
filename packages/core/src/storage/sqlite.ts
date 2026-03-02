@@ -39,6 +39,7 @@ export interface SqliteStorage {
   searchMemory(query: string): MemoryEntry[];
   // Tag management
   getAllTagsWithCounts(): { tag: string; count: number }[];
+  getTopTagsWithCounts(limit: number): { tag: string; count: number }[];
   renameTag(from: string, to: string): number;
   mergeTags(tags: string[], into: string): number;
   // User preferences
@@ -401,8 +402,9 @@ export function createSqliteStorage(dbPath: string, logger: Logger): SqliteStora
     `),
     getAllTagsWithCounts: db.prepare(`
       WITH RECURSIVE
-        all_tags(tag, rest) AS (
+        all_tags(rowid, tag, rest) AS (
           SELECT
+            rowid,
             CASE WHEN instr(tags || ',', ',') > 0
                  THEN substr(tags || ',', 1, instr(tags || ',', ',') - 1)
                  ELSE tags END,
@@ -412,6 +414,7 @@ export function createSqliteStorage(dbPath: string, logger: Logger): SqliteStora
           FROM notes WHERE tags != ''
           UNION ALL
           SELECT
+            rowid,
             CASE WHEN instr(rest, ',') > 0
                  THEN substr(rest, 1, instr(rest, ',') - 1)
                  ELSE rest END,
@@ -420,13 +423,64 @@ export function createSqliteStorage(dbPath: string, logger: Logger): SqliteStora
                  ELSE '' END
           FROM all_tags WHERE rest != ''
         )
-      SELECT tag, COUNT(*) as count
+      SELECT tag, COUNT(DISTINCT rowid) as count
       FROM all_tags WHERE tag != ''
       GROUP BY tag ORDER BY count DESC, tag ASC
     `),
+    getTopTagsWithCounts: db.prepare(`
+      WITH RECURSIVE
+        all_tags(rowid, tag, rest) AS (
+          SELECT
+            rowid,
+            CASE WHEN instr(tags || ',', ',') > 0
+                 THEN substr(tags || ',', 1, instr(tags || ',', ',') - 1)
+                 ELSE tags END,
+            CASE WHEN instr(tags || ',', ',') > 0
+                 THEN substr(tags || ',', instr(tags || ',', ',') + 1)
+                 ELSE '' END
+          FROM notes WHERE tags != ''
+          UNION ALL
+          SELECT
+            rowid,
+            CASE WHEN instr(rest, ',') > 0
+                 THEN substr(rest, 1, instr(rest, ',') - 1)
+                 ELSE rest END,
+            CASE WHEN instr(rest, ',') > 0
+                 THEN substr(rest, instr(rest, ',') + 1)
+                 ELSE '' END
+          FROM all_tags WHERE rest != ''
+        )
+      SELECT tag, COUNT(DISTINCT rowid) as count
+      FROM all_tags WHERE tag != ''
+      GROUP BY tag ORDER BY count DESC, tag ASC
+      LIMIT ?
+    `),
     renameTag: db.prepare(`
       UPDATE notes
-      SET tags = TRIM(REPLACE(',' || tags || ',', ',' || ? || ',', ',' || ? || ','), ','),
+      SET tags = (
+            WITH RECURSIVE
+              split(tag, rest) AS (
+                SELECT
+                  CASE WHEN instr(tags || ',', ',') > 0
+                       THEN substr(tags || ',', 1, instr(tags || ',', ',') - 1)
+                       ELSE tags END,
+                  CASE WHEN instr(tags || ',', ',') > 0
+                       THEN substr(tags || ',', instr(tags || ',', ',') + 1)
+                       ELSE '' END
+                UNION ALL
+                SELECT
+                  CASE WHEN instr(rest, ',') > 0
+                       THEN substr(rest, 1, instr(rest, ',') - 1)
+                       ELSE rest END,
+                  CASE WHEN instr(rest, ',') > 0
+                       THEN substr(rest, instr(rest, ',') + 1)
+                       ELSE '' END
+                FROM split WHERE rest != ''
+              )
+            SELECT GROUP_CONCAT(DISTINCT CASE WHEN tag = ? THEN ? ELSE tag END)
+            FROM split
+            WHERE tag != ''
+          ),
           updated = ?
       WHERE (',' || tags || ',') LIKE ('%,' || ? || ',%')
     `),
@@ -657,9 +711,13 @@ export function createSqliteStorage(dbPath: string, logger: Logger): SqliteStora
       return stmts.getAllTagsWithCounts.all() as { tag: string; count: number }[];
     },
 
+    getTopTagsWithCounts(limit: number): { tag: string; count: number }[] {
+      return stmts.getTopTagsWithCounts.all(limit) as { tag: string; count: number }[];
+    },
+
     renameTag(from: string, to: string): number {
       const now = new Date().toISOString();
-      const info = stmts.renameTag.run(to, to, now, from, from) as Database.RunResult;
+      const info = stmts.renameTag.run(from, to, now, from) as Database.RunResult;
       return info.changes;
     },
 
@@ -669,7 +727,7 @@ export function createSqliteStorage(dbPath: string, logger: Logger): SqliteStora
         let total = 0;
         for (const from of tags) {
           if (from === into) continue;
-          const info = stmts.renameTag.run(into, into, now, from, from) as Database.RunResult;
+          const info = stmts.renameTag.run(from, into, now, from) as Database.RunResult;
           total += info.changes;
         }
         return total;

@@ -93,8 +93,8 @@ Register plugins via `PluginRegistry` in the entry point.
 **CRITICAL — Adding a new plugin checklist (ALWAYS do ALL of these):**
 1. Create `plugins/<name>/package.json` with the plugin package
 2. Add `plugins/<name>/package.json` to `pnpm-workspace.yaml` (if not glob-matched)
-3. Add `COPY plugins/<name>/package.json plugins/<name>/` to **both** the `deps` and `production` stages in `docker/Dockerfile`
-4. Add `COPY --from=deps /app/plugins/<name>/package.json plugins/<name>/` to the `production` stage in `docker/Dockerfile`
+3. In the `deps` stage in `docker/Dockerfile`, add `COPY plugins/<name>/package.json plugins/<name>/`
+4. In the `production` stage in `docker/Dockerfile`, add `COPY --from=deps /app/plugins/<name>/package.json plugins/<name>/`
 5. Add the plugin's TypeScript path alias to the root `tsconfig.json` `paths` section
 6. Register the plugin in the daemon entry point
 

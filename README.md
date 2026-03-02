@@ -17,11 +17,7 @@
 
 <div align="center">
 
-<a href="https://www.youtube.com/watch?v=D3QCQXqNewU">
-  <img src="assets/demo-cover.jpg" alt="EchOS One Shot Demo" width="800">
-</a>
 
-<br/>
 
 [![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/P5P71PDYLX)
 
@@ -36,6 +32,12 @@
 <img src="assets/telegram-demo-2.png" alt="EchOS Telegram conversation" width="400">
 
 *Save articles, search your knowledge, get reminders — all through natural conversation.*
+
+<a href="https://www.youtube.com/watch?v=D3QCQXqNewU">
+  <img src="assets/demo-cover.jpg" alt="EchOS One Shot Demo" width="800">
+</a>
+
+<br/>
 
 </div>
 

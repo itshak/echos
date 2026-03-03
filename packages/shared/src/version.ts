@@ -3,14 +3,16 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createLogger } from './logging/index.js';
 
-const logger = createLogger('version');
-
 /**
  * Walks up the directory tree from this file to find the root package.json
  * (identified by `"name": "echos"`) and returns its version.
  *
  * The result is memoised after the first successful resolution so that
  * repeated calls never hit the filesystem again.
+ *
+ * The logger is created lazily — only if an unexpected error occurs — so
+ * importing any symbol from @echos/shared does not instantiate a Pino
+ * logger as a module-load side effect.
  *
  * Works in both `tsx` (source) and compiled (`dist`) contexts.
  */
@@ -45,8 +47,14 @@ export function getVersion(): string {
       dir = parent;
     }
   } catch (error) {
-    logger.error({ err: error }, 'Unexpected error resolving application version from package.json');
+    // Logger is created lazily here so that importing @echos/shared never
+    // instantiates a Pino instance as a module-load side effect.
+    createLogger('version').error(
+      { err: error },
+      'Unexpected error resolving application version from package.json',
+    );
   }
 
-  return 'unknown';
+  cachedVersion = 'unknown';
+  return cachedVersion;
 }

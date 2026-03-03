@@ -22,6 +22,7 @@ services:
     environment:
       - REDIS_URL=redis://redis:6379
       - NODE_ENV=production
+      - ECHOS_DATA_DIR=./data/db
     volumes:
       - ../data/knowledge:/app/data/knowledge
       - ../data/db:/app/data/db

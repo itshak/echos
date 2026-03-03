@@ -7,8 +7,9 @@ import { createLogger } from './logging/index.js';
  * Walks up the directory tree from this file to find the root package.json
  * (identified by `"name": "echos"`) and returns its version.
  *
- * The result is memoised after the first successful resolution so that
- * repeated calls never hit the filesystem again.
+ * The result is always memoised after the first call (whether the version
+ * was resolved successfully or fell back to `'unknown'`) so that repeated
+ * calls never hit the filesystem again.
  *
  * The logger is created lazily — only if an unexpected error occurs — so
  * importing any symbol from @echos/shared does not instantiate a Pino

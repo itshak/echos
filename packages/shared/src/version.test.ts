@@ -54,7 +54,6 @@ describe('getVersion', () => {
         ...actual,
         readFileSync: (path: unknown, ...args: unknown[]) => {
           callCount++;
-          // @ts-expect-error – spread unknown args for the actual fn
           return (actual.readFileSync as (...a: unknown[]) => unknown)(path, ...args);
         },
       };

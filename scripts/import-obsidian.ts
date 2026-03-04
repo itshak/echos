@@ -8,13 +8,17 @@
  *   pnpm import:obsidian --source /path/to/vault --target ./data/knowledge
  *   pnpm import:obsidian --source /path/to/vault --type note --dry-run
  *   pnpm import:obsidian --source /path/to/vault --copy
+ *   pnpm import:obsidian --source ~/ai-corner --type article --tags ai-corner,article --category articles --copy
  *
  * Options:
- *   --source <path>   Path to Obsidian vault (required)
- *   --target <path>   Output directory (default: ./data/knowledge)
- *   --type <type>     Default ContentType for all notes (default: note)
- *   --dry-run         Preview only, no writes
- *   --copy            Copy files to --target instead of modifying in place
+ *   --source <path>       Path to Obsidian vault or markdown folder (required)
+ *   --target <path>       Output directory (default: ./data/knowledge)
+ *   --type <type>         Default ContentType for all notes (default: note)
+ *                         Valid: note | journal | article | youtube | tweet | reminder | conversation | image
+ *   --tags <t1,t2,...>    Extra tags to merge into every imported note (comma-separated)
+ *   --category <cat>      Override the inferred category for every imported note
+ *   --dry-run             Preview only, no writes
+ *   --copy                Copy files to --target instead of modifying in place
  */
 
 import { readFileSync, writeFileSync, mkdirSync, statSync, readdirSync } from 'node:fs';
@@ -24,10 +28,10 @@ import matter from 'gray-matter';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-type ContentType = 'note' | 'journal' | 'article' | 'youtube' | 'reminder' | 'conversation';
+type ContentType = 'note' | 'journal' | 'article' | 'youtube' | 'tweet' | 'reminder' | 'conversation' | 'image';
 type ContentStatus = 'saved' | 'read' | 'archived';
 
-const VALID_TYPES = new Set<ContentType>(['note', 'journal', 'article', 'youtube', 'reminder', 'conversation']);
+const VALID_TYPES = new Set<ContentType>(['note', 'journal', 'article', 'youtube', 'tweet', 'reminder', 'conversation', 'image']);
 const VALID_STATUSES = new Set<ContentStatus>(['saved', 'read', 'archived']);
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -37,11 +41,21 @@ const DATE_PREFIX_RE = /^\d{4}-\d{2}-\d{2}[-_\s]/;
 
 // ─── CLI parsing ──────────────────────────────────────────────────────────────
 
-function parseArgs(): { source: string; target: string; type: ContentType; dryRun: boolean; copy: boolean } {
+function parseArgs(): {
+  source: string;
+  target: string;
+  type: ContentType;
+  extraTags: string[];
+  overrideCategory: string | undefined;
+  dryRun: boolean;
+  copy: boolean;
+} {
   const args = process.argv.slice(2);
   let source = '';
   let target = './data/knowledge';
   let type: ContentType = 'note';
+  let extraTags: string[] = [];
+  let overrideCategory: string | undefined;
   let dryRun = false;
   let copy = false;
 
@@ -55,6 +69,15 @@ function parseArgs(): { source: string; target: string; type: ContentType; dryRu
         else { console.error(`Unknown type: ${t}. Valid: ${[...VALID_TYPES].join(', ')}`); process.exit(1); }
         break;
       }
+      case '--tags': {
+        const raw = args[++i] ?? '';
+        extraTags = raw.split(',').map(t => t.trim().toLowerCase()).filter(Boolean);
+        break;
+      }
+      case '--category': {
+        overrideCategory = (args[++i] ?? '').trim() || undefined;
+        break;
+      }
       case '--dry-run': dryRun = true; break;
       case '--copy': copy = true; break;
       default:
@@ -64,11 +87,11 @@ function parseArgs(): { source: string; target: string; type: ContentType; dryRu
 
   if (!source) {
     console.error('Error: --source is required');
-    console.error('Usage: pnpm import:obsidian --source /path/to/vault [--target ./data/knowledge] [--type note] [--dry-run] [--copy]');
+    console.error('Usage: pnpm import:obsidian --source /path/to/vault [--target ./data/knowledge] [--type note] [--tags t1,t2] [--category cat] [--dry-run] [--copy]');
     process.exit(1);
   }
 
-  return { source, target, type, dryRun, copy };
+  return { source, target, type, extraTags, overrideCategory, dryRun, copy };
 }
 
 // ─── Date parsing ─────────────────────────────────────────────────────────────
@@ -184,6 +207,8 @@ function processFile(
   sourceRoot: string,
   targetRoot: string,
   defaultType: ContentType,
+  extraTags: string[],
+  overrideCategory: string | undefined,
   copy: boolean,
   dryRun: boolean,
 ): ProcessResult {
@@ -238,22 +263,22 @@ function processFile(
   const created = parseFlexibleDate(createdRaw, birthtime);
   const updated = parseFlexibleDate(updatedRaw, mtime);
 
-  // tags: frontmatter tags + inline #tags
+  // tags: frontmatter tags + inline #tags + --tags overrides (merged, deduplicated)
   const fmTags = Array.isArray(data['tags'])
     ? (data['tags'] as unknown[]).map(String).map(t => t.toLowerCase().trim())
     : typeof data['tags'] === 'string'
       ? (data['tags'] as string).split(/[\s,]+/).map(t => t.toLowerCase().trim()).filter(Boolean)
       : [];
   const inlineTags = extractInlineTags(content);
-  const tags = [...new Set([...fmTags, ...inlineTags])].filter(Boolean);
+  const tags = [...new Set([...fmTags, ...inlineTags, ...extraTags])].filter(Boolean);
 
-  // category
+  // category: --category overrides everything, then frontmatter, then path inference
   const relPath = relative(sourceRoot, filePath);
   const firstSegment = relPath.split('/')[0] ?? 'uncategorized';
   const rawCategory = data['category'] as string | undefined;
-  const category = typeof rawCategory === 'string' && rawCategory.trim()
-    ? rawCategory.trim()
-    : dirname(relPath) !== '.' ? firstSegment : 'uncategorized';
+  const category = overrideCategory
+    ?? (typeof rawCategory === 'string' && rawCategory.trim() ? rawCategory.trim() : undefined)
+    ?? (dirname(relPath) !== '.' ? firstSegment : 'uncategorized');
 
   // links: frontmatter links + WikiLink extraction
   const fmLinks = Array.isArray(data['links'])
@@ -307,9 +332,11 @@ function processFile(
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
-  const { source, target, type, dryRun, copy } = parseArgs();
+  const { source, target, type, extraTags, overrideCategory, dryRun, copy } = parseArgs();
 
   if (dryRun) console.log('DRY RUN — no files will be written\n');
+  if (extraTags.length > 0) console.log(`Extra tags applied to all notes: ${extraTags.join(', ')}`);
+  if (overrideCategory) console.log(`Category override: ${overrideCategory}`);
 
   let files: string[];
   try {
@@ -332,7 +359,7 @@ async function main(): Promise<void> {
 
   for (const file of files) {
     const rel = relative(source, file);
-    const result = processFile(file, source, target, type, copy, dryRun);
+    const result = processFile(file, source, target, type, extraTags, overrideCategory, copy, dryRun);
 
     if (result.status === 'converted') {
       const dest = result.outPath ?? file;

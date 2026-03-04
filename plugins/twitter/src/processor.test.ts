@@ -145,6 +145,69 @@ describe('processTweet', () => {
     expect(result.content).toContain('@quoteduser');
   });
 
+  it('processes an X Article with empty text and draft.js blocks', async () => {
+    const articleTweet = {
+      ...baseTweet,
+      text: '', // Empty text field
+      article: {
+        title: 'My Awesome Guide',
+        preview_text: 'Preview of my awesome guide',
+        created_at: '2024-05-15T00:00:00Z',
+        modified_at: '2024-05-15T00:00:00Z',
+        id: '999',
+        content: {
+          blocks: [
+            {
+              key: '1',
+              text: 'Introduction',
+              type: 'header-one',
+              entityRanges: [],
+              inlineStyleRanges: [],
+              data: {}
+            },
+            {
+              key: '2',
+              text: 'This is the first paragraph of the long article.',
+              type: 'unstyled',
+              entityRanges: [],
+              inlineStyleRanges: [],
+              data: {}
+            },
+            {
+              key: '3',
+              text: 'Steps to follow',
+              type: 'header-two',
+              entityRanges: [],
+              inlineStyleRanges: [],
+              data: {}
+            },
+            {
+              key: '4',
+              text: 'Step 1',
+              type: 'ordered-list-item',
+              entityRanges: [],
+              inlineStyleRanges: [],
+              data: {}
+            }
+          ],
+          entityMap: {}
+        }
+      }
+    };
+
+    mockFetch.mockResolvedValueOnce(makeFxTweetResponse(articleTweet));
+
+    const result = await processTweet('https://x.com/testuser/status/123456789', mockLogger);
+
+    expect(result.title).toContain('My Awesome Guide');
+    expect(result.content).toContain('# My Awesome Guide');
+    expect(result.content).toContain('# Introduction');
+    expect(result.content).toContain('This is the first paragraph of the long article.');
+    expect(result.content).toContain('## Steps to follow');
+    expect(result.content).toContain('1. Step 1');
+    expect(result.embedText).toContain('This is the first paragraph of the long article.');
+  });
+
   it('unrolls a thread (same author reply chain)', async () => {
     const threadTweet2 = {
       ...baseTweet,

@@ -13,6 +13,29 @@ interface FxTweetAuthor {
   screen_name: string;
 }
 
+interface FxArticleBlock {
+  key: string;
+  text: string;
+  type: string;
+  entityRanges: unknown[];
+  inlineStyleRanges: unknown[];
+  data: unknown;
+}
+
+interface FxArticle {
+  title: string;
+  preview_text: string;
+  content: {
+    blocks: FxArticleBlock[];
+    entityMap: unknown;
+  };
+  cover_media?: unknown;
+  created_at: string;
+  id: string;
+  media_entities?: unknown[];
+  modified_at: string;
+}
+
 interface FxMediaItem {
   url: string;
   thumbnail_url?: string;
@@ -40,6 +63,7 @@ interface FxTweet {
   replying_to?: string;
   replying_to_status?: string;
   id: string;
+  article?: FxArticle;
 }
 
 interface FxTwitterResponse {
@@ -168,13 +192,76 @@ function formatQuoteTweet(quote: FxTweet): string {
   return section;
 }
 
+/** Format draft.js blocks into markdown. */
+function formatArticleBlocks(blocks: FxArticleBlock[]): string {
+  const markdownBlocks: string[] = [];
+
+  for (const block of blocks) {
+    if (!block.text && block.type === 'unstyled') {
+      markdownBlocks.push('');
+      continue;
+    }
+
+    const text = block.text;
+
+    switch (block.type) {
+      case 'header-one':
+        markdownBlocks.push(`# ${text}`);
+        break;
+      case 'header-two':
+        markdownBlocks.push(`## ${text}`);
+        break;
+      case 'header-three':
+        markdownBlocks.push(`### ${text}`);
+        break;
+      case 'header-four':
+        markdownBlocks.push(`#### ${text}`);
+        break;
+      case 'header-five':
+        markdownBlocks.push(`##### ${text}`);
+        break;
+      case 'header-six':
+        markdownBlocks.push(`###### ${text}`);
+        break;
+      case 'blockquote':
+        markdownBlocks.push(`> ${text}`);
+        break;
+      case 'code-block':
+        markdownBlocks.push(`\`\`\`\n${text}\n\`\`\``);
+        break;
+      case 'unordered-list-item':
+        markdownBlocks.push(`* ${text}`);
+        break;
+      case 'ordered-list-item':
+        markdownBlocks.push(`1. ${text}`);
+        break;
+      case 'unstyled':
+      default:
+        markdownBlocks.push(text);
+        break;
+    }
+  }
+
+  return markdownBlocks.join('\n\n');
+}
+
 /** Format a single tweet as markdown. */
 function formatSingleTweet(tweet: FxTweet, sourceUrl: string): string {
   const date = formatDate(tweet.created_timestamp);
   const engagement = formatEngagement(tweet);
 
-  const tweetLines = tweet.text.split('\n').map((line) => `> ${line}`).join('\n');
-  let markdown = `${tweetLines}\n\n`;
+  let markdown = '';
+
+  if (tweet.article) {
+    if (tweet.article.title) {
+      markdown += `# ${tweet.article.title}\n\n`;
+    }
+    markdown += `${formatArticleBlocks(tweet.article.content.blocks)}\n\n`;
+  } else if (tweet.text) {
+    const tweetLines = tweet.text.split('\n').map((line) => `> ${line}`).join('\n');
+    markdown += `${tweetLines}\n\n`;
+  }
+
   markdown += `— @${tweet.author.screen_name} (${tweet.author.name}), ${date}\n\n`;
   if (engagement) markdown += `${engagement}\n\n`;
 
@@ -204,6 +291,12 @@ function formatThread(tweets: FxTweet[], sourceUrl: string): string {
     if (text.startsWith(selfMentionPrefix)) {
       text = text.slice(selfMentionPrefix.length);
     }
+
+    if (!text && t.article) {
+      if (t.article.title) text += `# ${t.article.title}\n\n`;
+      text += formatArticleBlocks(t.article.content.blocks);
+    }
+
     return text;
   });
 
@@ -264,10 +357,20 @@ export async function processTweet(url: string, logger: Logger): Promise<Process
     : formatSingleTweet(tweet, url);
 
   const author = tweet.author;
-  const firstText = tweets[0]!.text;
+
+  function getPreviewText(t: FxTweet): string {
+    return t.text || t.article?.title || t.article?.preview_text || 'X Article';
+  }
+  function getPlaintextContent(t: FxTweet): string {
+    return t.text || (t.article ? t.article.content.blocks.map((b) => b.text).join('\n') : '');
+  }
+
+  const firstText = getPreviewText(tweets[0]!);
+  const singleText = getPreviewText(tweet);
+
   const title = isThread
     ? `Thread by @${author.screen_name}: ${firstText.slice(0, 80)}${firstText.length > 80 ? '...' : ''}`
-    : `@${author.screen_name}: ${tweet.text.slice(0, 100)}${tweet.text.length > 100 ? '...' : ''}`;
+    : `@${author.screen_name}: ${singleText.slice(0, 100)}${singleText.length > 100 ? '...' : ''}`;
 
   const metadata: ProcessedContent['metadata'] = {
     type: 'tweet',
@@ -276,8 +379,8 @@ export async function processTweet(url: string, logger: Logger): Promise<Process
   };
 
   const embedText = isThread
-    ? `Thread by @${author.screen_name}\n\n${tweets.map((t) => t.text).join('\n\n')}`
-    : `Tweet by @${author.screen_name}\n\n${tweet.text}`;
+    ? `Thread by @${author.screen_name}\n\n${tweets.map(getPlaintextContent).join('\n\n')}`
+    : `Tweet by @${author.screen_name}\n\n${getPlaintextContent(tweet)}`;
 
   logger.info(
     { title, isThread, tweetCount: tweets.length, contentLength: content.length },

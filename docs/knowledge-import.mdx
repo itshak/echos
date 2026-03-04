@@ -126,9 +126,28 @@ pnpm import:obsidian --source ~/vault --category articles
 
 Overrides the category that would normally be inferred from the vault's directory structure.
 
+**7. Re-process already-imported files (`--force`)**
+
+If you ran the importer before and files already have an EchOS `id`, they are skipped by default.
+Use `--force` to re-process them: tags are merged in, `--category` / `--type` overrides are applied,
+and the existing `id` (and all other fields) is preserved.
+
+```bash
+# Add tags + fix category on files that were already imported
+pnpm import:obsidian \
+  --source ~/Documents/ai-corner \
+  --tags ai-corner,article \
+  --category articles \
+  --force
+
+pnpm reconcile
+```
+
+`--force` works with `--copy` too: the patched file is written to the target directory.
+
 **Combining flags — real-world example**
 
-Importing a folder of AI articles with no existing frontmatter, tagging them consistently and
+Importing a fresh folder of AI articles (no frontmatter), tagging them consistently and
 copying to the knowledge base without touching the originals:
 
 ```bash

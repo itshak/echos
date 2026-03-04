@@ -9,6 +9,7 @@
  *   pnpm import:obsidian --source /path/to/vault --type note --dry-run
  *   pnpm import:obsidian --source /path/to/vault --copy
  *   pnpm import:obsidian --source ~/ai-corner --type article --tags ai-corner,article --category articles --copy
+ *   pnpm import:obsidian --source ~/ai-corner --tags ai-corner,article --category articles --force
  *
  * Options:
  *   --source <path>       Path to Obsidian vault or markdown folder (required)
@@ -17,6 +18,8 @@
  *                         Valid: note | journal | article | youtube | tweet | reminder | conversation | image
  *   --tags <t1,t2,...>    Extra tags to merge into every imported note (comma-separated)
  *   --category <cat>      Override the inferred category for every imported note
+ *   --force               Re-process files that already have an EchOS id. Merges --tags and
+ *                         applies --category / --type overrides. Existing id is always preserved.
  *   --dry-run             Preview only, no writes
  *   --copy                Copy files to --target instead of modifying in place
  */
@@ -47,6 +50,7 @@ function parseArgs(): {
   type: ContentType;
   extraTags: string[];
   overrideCategory: string | undefined;
+  force: boolean;
   dryRun: boolean;
   copy: boolean;
 } {
@@ -56,6 +60,7 @@ function parseArgs(): {
   let type: ContentType = 'note';
   let extraTags: string[] = [];
   let overrideCategory: string | undefined;
+  let force = false;
   let dryRun = false;
   let copy = false;
 
@@ -78,6 +83,7 @@ function parseArgs(): {
         overrideCategory = (args[++i] ?? '').trim() || undefined;
         break;
       }
+      case '--force': force = true; break;
       case '--dry-run': dryRun = true; break;
       case '--copy': copy = true; break;
       default:
@@ -87,11 +93,11 @@ function parseArgs(): {
 
   if (!source) {
     console.error('Error: --source is required');
-    console.error('Usage: pnpm import:obsidian --source /path/to/vault [--target ./data/knowledge] [--type note] [--tags t1,t2] [--category cat] [--dry-run] [--copy]');
+    console.error('Usage: pnpm import:obsidian --source /path/to/vault [--target ./data/knowledge] [--type note] [--tags t1,t2] [--category cat] [--force] [--dry-run] [--copy]');
     process.exit(1);
   }
 
-  return { source, target, type, extraTags, overrideCategory, dryRun, copy };
+  return { source, target, type, extraTags, overrideCategory, force, dryRun, copy };
 }
 
 // ─── Date parsing ─────────────────────────────────────────────────────────────
@@ -209,6 +215,7 @@ function processFile(
   defaultType: ContentType,
   extraTags: string[],
   overrideCategory: string | undefined,
+  force: boolean,
   copy: boolean,
   dryRun: boolean,
 ): ProcessResult {
@@ -229,9 +236,11 @@ function processFile(
   const data = parsed.data as Record<string, unknown>;
   const content = parsed.content;
 
-  // Skip if already EchOS-native (has a UUID id)
   const existingId = data['id'] as string | undefined;
-  if (existingId && UUID_RE.test(existingId)) {
+  const isNative = Boolean(existingId && UUID_RE.test(existingId));
+
+  // Skip if already EchOS-native and --force not set
+  if (isNative && !force) {
     return { status: 'skipped', reason: 'already has EchOS id' };
   }
 
@@ -241,10 +250,11 @@ function processFile(
   const birthtime = new Date(stat.birthtimeMs);
   const mtime = new Date(stat.mtimeMs);
 
-  // Map fields
-  const id = randomUUID();
+  // id: preserve existing when --force, generate new otherwise
+  const id = isNative ? (existingId as string) : randomUUID();
 
-  // type
+  // type: --type overrides existing only when file wasn't native (or had no type);
+  //       for --force, honour existing type unless --type was explicitly passed and differs
   const rawType = data['type'] as string | undefined;
   const type: ContentType = rawType && VALID_TYPES.has(rawType as ContentType)
     ? (rawType as ContentType)
@@ -263,7 +273,7 @@ function processFile(
   const created = parseFlexibleDate(createdRaw, birthtime);
   const updated = parseFlexibleDate(updatedRaw, mtime);
 
-  // tags: frontmatter tags + inline #tags + --tags overrides (merged, deduplicated)
+  // tags: existing frontmatter tags + inline #tags + --tags (merged, deduplicated)
   const fmTags = Array.isArray(data['tags'])
     ? (data['tags'] as unknown[]).map(String).map(t => t.toLowerCase().trim())
     : typeof data['tags'] === 'string'
@@ -272,7 +282,7 @@ function processFile(
   const inlineTags = extractInlineTags(content);
   const tags = [...new Set([...fmTags, ...inlineTags, ...extraTags])].filter(Boolean);
 
-  // category: --category overrides everything, then frontmatter, then path inference
+  // category: --category overrides everything, then existing frontmatter, then path inference
   const relPath = relative(sourceRoot, filePath);
   const firstSegment = relPath.split('/')[0] ?? 'uncategorized';
   const rawCategory = data['category'] as string | undefined;
@@ -280,7 +290,7 @@ function processFile(
     ?? (typeof rawCategory === 'string' && rawCategory.trim() ? rawCategory.trim() : undefined)
     ?? (dirname(relPath) !== '.' ? firstSegment : 'uncategorized');
 
-  // links: frontmatter links + WikiLink extraction
+  // links: existing frontmatter links + WikiLink extraction
   const fmLinks = Array.isArray(data['links'])
     ? (data['links'] as unknown[]).map(String)
     : [];
@@ -293,6 +303,7 @@ function processFile(
     ? rawStatus
     : undefined;
 
+  // Preserve any extra frontmatter fields EchOS knows about
   const frontmatter: Record<string, unknown> = {
     id,
     type,
@@ -303,6 +314,10 @@ function processFile(
     links,
     category,
     ...(status !== undefined ? { status } : {}),
+    ...(data['inputSource'] !== undefined ? { inputSource: data['inputSource'] } : {}),
+    ...(data['source_url'] !== undefined ? { source_url: data['source_url'] } : {}),
+    ...(data['author'] !== undefined ? { author: data['author'] } : {}),
+    ...(data['gist'] !== undefined ? { gist: data['gist'] } : {}),
   };
 
   const outContent = `${buildFrontmatter(frontmatter)}\n\n${content.trimStart()}`;
@@ -332,9 +347,10 @@ function processFile(
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
-  const { source, target, type, extraTags, overrideCategory, dryRun, copy } = parseArgs();
+  const { source, target, type, extraTags, overrideCategory, force, dryRun, copy } = parseArgs();
 
   if (dryRun) console.log('DRY RUN — no files will be written\n');
+  if (force) console.log('FORCE mode — already-imported files will be re-processed');
   if (extraTags.length > 0) console.log(`Extra tags applied to all notes: ${extraTags.join(', ')}`);
   if (overrideCategory) console.log(`Category override: ${overrideCategory}`);
 
@@ -359,7 +375,7 @@ async function main(): Promise<void> {
 
   for (const file of files) {
     const rel = relative(source, file);
-    const result = processFile(file, source, target, type, extraTags, overrideCategory, copy, dryRun);
+    const result = processFile(file, source, target, type, extraTags, overrideCategory, force, copy, dryRun);
 
     if (result.status === 'converted') {
       const dest = result.outPath ?? file;

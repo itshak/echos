@@ -17,18 +17,8 @@ services:
       redis:
         condition: service_healthy
         required: true
-    # Run as the host user so volume files are owned by your SSH user,
-    # which makes SSHFS mounts writable.
-    #
-    # NOTE: UID/GID here come from Docker Compose variable substitution,
-    # which reads from docker/.env (this directory) or the shell environment —
-    # NOT from the env_file: directive below (that only sets container runtime vars).
-    #
-    # To set the correct UID/GID, create docker/.env with:
-    #   echo "UID=$(id -u)" >> docker/.env
-    #   echo "GID=$(id -g)" >> docker/.env
-    # This is done automatically by `pnpm wizard` and `scripts/deploy.sh`.
-    user: "${UID:-1000}:${GID:-1000}"
+    # The entrypoint script runs as root, fixes data directory ownership,
+    # then drops to the node user via su-exec. No user: override needed.
     env_file:
       - ../.env
     environment:

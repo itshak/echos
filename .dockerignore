@@ -47,6 +47,7 @@ docs/
 
 # Docker files
 docker/
+!docker/entrypoint.sh
 Dockerfile
 .dockerignore
 docker-compose*.yml

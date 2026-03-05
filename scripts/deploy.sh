@@ -21,6 +21,7 @@ rsync -avz --exclude='node_modules' --exclude='dist' --exclude='data' \
 
 # Build and restart on remote
 ssh "$REMOTE" bash -s <<'EOF'
+  set -euo pipefail
   cd /opt/echos
 
   # Install pnpm if needed
@@ -29,6 +30,12 @@ ssh "$REMOTE" bash -s <<'EOF'
   # Install deps and build
   pnpm install --frozen-lockfile
   pnpm build
+
+  # ── Data directory setup ─────────────────────────────────────────────────
+  # Ensure data directories exist. The Docker entrypoint script handles
+  # ownership correction at container startup, so no chown is needed here.
+  mkdir -p data/knowledge data/db data/sessions data/logs
+  # ─────────────────────────────────────────────────────────────────────────
 
   # Restart via docker-compose
   cd docker

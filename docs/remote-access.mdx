@@ -70,31 +70,15 @@ Then point Obsidian at `~/Echos-Knowledge`.
 
 ### Enabling write access
 
-SSHFS is read-only when the files on the server are owned by a different user than your SSH login.
-This happens because EchOS runs in Docker and by default Docker writes files as the `node` user
-(UID 1000), which may not match your server SSH user's UID.
+EchOS's Docker entrypoint automatically fixes data directory ownership on every startup — it runs briefly as root, corrects any ownership mismatches, then drops to the `node` user before starting the app. On most setups no manual steps are needed.
 
-Fix it in two steps:
-
-*Step 1 — add your UID/GID to `docker/.env` on the server (this is the file Docker Compose reads for variable substitution, not the app `.env`):*
+If you still see permission errors (e.g. after migrating from an older version), re-own the data directory once and restart:
 
 ```bash
 # Run on the server
-echo "UID=$(id -u)" >> ~/echos/docker/.env
-echo "GID=$(id -g)" >> ~/echos/docker/.env
-```
-
-*Step 2 — re-own all existing data files and restart Docker:*
-
-```bash
-# Run on the server — chown the entire data directory, not just knowledge
 sudo chown -R $(id -u):$(id -g) ~/echos/data
 cd ~/echos/docker && docker compose up -d --force-recreate
 ```
-
-Docker will now write all new files as your SSH user, so SSHFS mounts are fully writable.
-
-<Note>The `docker-compose.yml` uses `user: "${UID:-1000}:${GID:-1000}"` which falls back to UID/GID 1000 if the env vars are not set. If your server user happens to be UID 1000 (the most common case on a fresh VPS), you may already have write access without these steps.</Note>
 
 **Trade-offs**
 

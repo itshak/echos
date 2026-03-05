@@ -1,5 +1,7 @@
 FROM node:20-alpine AS base
-RUN corepack enable && corepack prepare pnpm@10.30.1 --activate
+# su-exec: lightweight setuid helper for dropping privileges in entrypoints
+RUN apk add --no-cache su-exec && \
+    corepack enable && corepack prepare pnpm@10.30.1 --activate
 WORKDIR /app
 
 # Install dependencies
@@ -54,14 +56,22 @@ COPY --from=build /app/packages ./packages/
 COPY --from=build /app/plugins ./plugins/
 COPY src/ src/
 
-# Runtime directories
+# Runtime directories — owned by node for when the container runs without
+# a host volume (e.g. local dev). The entrypoint re-chowns at startup when
+# host volume ownership differs.
 RUN mkdir -p data/knowledge data/db data/sessions data/logs && \
     chown -R node:node /app
 
-# Switch to non-root user for security
-USER node
+# Copy entrypoint (must run as root to chown, then drops to node via su-exec)
+COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
 
 ENV NODE_ENV=production
 EXPOSE 3000
 
+# Note: the container's default user is root. The entrypoint drops to the
+# unprivileged "node" user via su-exec for the main process, but any
+# `docker exec` into a running container will be root unless `-u node`
+# is explicitly specified.
+ENTRYPOINT ["entrypoint.sh"]
 CMD ["node", "--import", "tsx", "src/index.ts"]

@@ -115,7 +115,20 @@ export async function reconcileStorage(opts: ReconcileOptions): Promise<Reconcil
       stats.updated++;
       logger.debug({ id, filePath }, 'Reconciler: updated moved note path');
     } else {
-      stats.skipped++;
+      // Content and path unchanged — check if frontmatter metadata changed
+      const meta = buildMetadata(data);
+      const metaChanged =
+        existing.type !== meta.type ||
+        existing.title !== meta.title ||
+        existing.tags !== meta.tags.join(',') ||
+        existing.category !== meta.category;
+      if (metaChanged) {
+        sqlite.upsertNote(meta, content, filePath, contentHash);
+        stats.updated++;
+        logger.debug({ id, filePath }, 'Reconciler: updated frontmatter-only change');
+      } else {
+        stats.skipped++;
+      }
     }
   }
 

@@ -170,6 +170,17 @@ start_redis() {
 # ─── Clone / update ──────────────────────────────────────────────────────────
 
 clone_or_update() {
+  # If ECHOS_REPO is a local path (used in CI to avoid cloning), copy/link it instead.
+  if [ -d "$ECHOS_REPO" ] && [ "$ECHOS_REPO" != "https://github.com/albinotonnina/echos.git" ]; then
+    if [ -d "$ECHOS_INSTALL_DIR/.git" ]; then
+      info "Using local repo at $ECHOS_REPO (already present at $ECHOS_INSTALL_DIR, skipping copy)"
+    else
+      info "Using local repo at $ECHOS_REPO → $ECHOS_INSTALL_DIR"
+      cp -r "$ECHOS_REPO" "$ECHOS_INSTALL_DIR"
+      success "Copied local repo"
+    fi
+    return
+  fi
   if [ -d "$ECHOS_INSTALL_DIR/.git" ]; then
     info "EchOS already cloned at $ECHOS_INSTALL_DIR — pulling latest..."
     git -C "$ECHOS_INSTALL_DIR" fetch origin

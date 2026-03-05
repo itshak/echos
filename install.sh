@@ -176,7 +176,8 @@ clone_or_update() {
       info "Using local repo at $ECHOS_REPO (already present at $ECHOS_INSTALL_DIR, skipping copy)"
     else
       info "Using local repo at $ECHOS_REPO → $ECHOS_INSTALL_DIR"
-      cp -r "$ECHOS_REPO" "$ECHOS_INSTALL_DIR"
+      mkdir -p "$ECHOS_INSTALL_DIR"
+      cp -r "$ECHOS_REPO"/. "$ECHOS_INSTALL_DIR"
       success "Copied local repo"
     fi
     return

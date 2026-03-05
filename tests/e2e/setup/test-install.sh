@@ -43,8 +43,13 @@ echo ""
 [ -d "$INSTALL_DIR/packages/shared/dist" ] && check "packages/shared/dist built" "true" || check "packages/shared/dist built" "false"
 
 # pnpm workspace bins available (echos CLI)
-[ -f "$INSTALL_DIR/node_modules/.bin/tsx" ] || [ -f "$INSTALL_DIR/node_modules/.pnpm/.bin/tsx" ] || \
-  command -v tsx >/dev/null 2>&1 && check "tsx executable available" "true" || check "tsx executable available" "false"
+if [ -f "$INSTALL_DIR/node_modules/.bin/tsx" ] || \
+   [ -f "$INSTALL_DIR/node_modules/.pnpm/.bin/tsx" ] || \
+   command -v tsx >/dev/null 2>&1; then
+  check "tsx executable available" "true"
+else
+  check "tsx executable available" "false"
+fi
 
 echo ""
 if [ "$FAIL" -gt 0 ]; then

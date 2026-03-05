@@ -593,36 +593,7 @@ function createDataDirs(state: WizardState): void {
   }
 }
 
-/**
- * Write docker/.env with the current user's UID/GID so Docker Compose runs
- * the container as the same user that owns the data directories.
- * This is required for SSHFS mounts to be writable and for volume-mounted
- * files to be owned by the SSH user rather than the container's node user.
- */
-function writeDockerEnv(): void {
-  const dockerEnvPath = path.resolve('docker/.env');
-  const uid = process.getuid?.() ?? 1000;
-  const gid = process.getgid?.() ?? 1000;
 
-  let existing = '';
-  if (fs.existsSync(dockerEnvPath)) {
-    existing = fs.readFileSync(dockerEnvPath, 'utf8');
-  }
-
-  // Strip any existing UID/GID lines and re-write with current values
-  const filtered = existing
-    .split('\n')
-    .filter((line) => !line.startsWith('UID=') && !line.startsWith('GID='))
-    .join('\n')
-    .trim();
-
-  const content = [filtered, `UID=${uid}`, `GID=${gid}`]
-    .filter(Boolean)
-    .join('\n') + '\n';
-
-  fs.mkdirSync(path.resolve('docker'), { recursive: true });
-  fs.writeFileSync(dockerEnvPath, content, { encoding: 'utf8', mode: 0o600 });
-}
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -747,9 +718,8 @@ async function main(): Promise<void> {
 
   writeEnvFile(state);
   createDataDirs(state);
-  writeDockerEnv();
 
-  writeSpin?.stop(pc.green('.env written (mode 0600), data directories created, docker/.env configured'));
+  writeSpin?.stop(pc.green('.env written (mode 0600) and data directories created'));
 
   if (NON_INTERACTIVE) {
     console.log('.env written successfully');

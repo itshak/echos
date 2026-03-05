@@ -7,28 +7,24 @@ description: "Configuration changes and fixes log."
 
 This document tracks configuration changes and fixes made to ensure the project runs correctly.
 
-## March 2026 — SSHFS write access via Docker UID alignment
+## March 2026 — SSHFS write access via Docker entrypoint ownership fix
 
 ### Problem
 
-SSHFS mounts of the knowledge directory were read-only. Docker writes files as the `node` user
-(UID 1000 inside the container), which may differ from the server SSH user's UID, making SSHFS
-mounts effectively read-only even though the SSH key has full access.
+SSHFS mounts of the knowledge directory were read-only. Docker was writing volume files as the
+`node` user (UID 1000), which differed from the server SSH user's UID on some VPS providers
+(e.g. Oracle Cloud where the default `ubuntu` user is UID 1001).
 
 ### Fix
 
-`docker-compose.yml` now sets `user: "${UID:-1000}:${GID:-1000}"` on the `echos` service,
-making Docker write volume files as the host user. To activate:
+A Docker entrypoint script (`docker/entrypoint.sh`) now runs as root on startup, detects any
+ownership mismatch in the data directories, corrects it, then drops to the `node` user via
+`su-exec` before starting the app. This self-heals on every container start with no manual steps.
+
+If upgrading from an older version, re-own once and restart:
 
 ```bash
-# On the server — add your UID/GID to docker/.env (compose reads this for variable substitution)
-echo "UID=$(id -u)" >> ~/echos/docker/.env
-echo "GID=$(id -g)" >> ~/echos/docker/.env
-
-# Re-own any files created before this fix
 sudo chown -R $(id -u):$(id -g) ~/echos/data
-
-# Restart Docker with the new user setting
 cd ~/echos/docker && docker compose up -d --force-recreate
 ```
 

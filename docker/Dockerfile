@@ -69,5 +69,9 @@ RUN chmod +x /usr/local/bin/entrypoint.sh
 ENV NODE_ENV=production
 EXPOSE 3000
 
+# Note: the container's default user is root. The entrypoint drops to the
+# unprivileged "node" user via su-exec for the main process, but any
+# `docker exec` into a running container will be root unless `-u node`
+# is explicitly specified.
 ENTRYPOINT ["entrypoint.sh"]
 CMD ["node", "--import", "tsx", "src/index.ts"]

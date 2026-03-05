@@ -20,6 +20,9 @@ on:
       - 'scripts/setup.test.ts'
       - 'scripts/setup-server.test.ts'
 
+permissions:
+  contents: read
+
 jobs:
   # ─── Job 1: ShellCheck static analysis ────────────────────────────────────
   shellcheck:

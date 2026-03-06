@@ -9,7 +9,7 @@ export interface ReadingQueueToolDeps {
 
 const schema = Type.Object({
   limit: Type.Optional(
-    Type.Number({ description: 'Max items to return', default: 10 }),
+    Type.Number({ description: 'Max items to return', default: 10, minimum: 1 }),
   ),
   type: Type.Optional(
     Type.Union(

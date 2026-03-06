@@ -22,30 +22,53 @@ export function createReadingStatsTool(deps: ReadingStatsToolDeps): AgentTool<ty
     parameters: schema,
     execute: async (_toolCallId: string, _params: Params) => {
       const db = deps.sqlite.db;
-
-      const count = (sql: string) => {
-        const row = db.prepare(sql).get() as { n: number };
-        return row.n;
-      };
-
-      const totalSaved = count(`SELECT COUNT(*) AS n FROM notes WHERE type IN ${TYPE_IN} AND status = 'saved'`);
-      const totalRead = count(`SELECT COUNT(*) AS n FROM notes WHERE type IN ${TYPE_IN} AND status = 'read'`);
-      const totalArchived = count(`SELECT COUNT(*) AS n FROM notes WHERE type IN ${TYPE_IN} AND status = 'archived'`);
-
       const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
-      const recentSaves = count(
-        `SELECT COUNT(*) AS n FROM notes WHERE type IN ${TYPE_IN} AND status = 'saved' AND created >= '${sevenDaysAgo}'`,
-      );
-      const recentReads = count(
-        `SELECT COUNT(*) AS n FROM notes WHERE type IN ${TYPE_IN} AND status = 'read' AND updated >= '${sevenDaysAgo}'`,
-      );
+
+      const overallRow = db
+        .prepare(
+          `SELECT
+            SUM(CASE WHEN status = 'saved'    THEN 1 ELSE 0 END) AS totalSaved,
+            SUM(CASE WHEN status = 'read'     THEN 1 ELSE 0 END) AS totalRead,
+            SUM(CASE WHEN status = 'archived' THEN 1 ELSE 0 END) AS totalArchived,
+            SUM(CASE WHEN created >= @sevenDaysAgo               THEN 1 ELSE 0 END) AS recentSaves,
+            SUM(CASE WHEN status = 'read' AND updated >= @sevenDaysAgo THEN 1 ELSE 0 END) AS recentReads
+          FROM notes
+          WHERE type IN ${TYPE_IN}`,
+        )
+        .get({ sevenDaysAgo }) as {
+          totalSaved: number | null;
+          totalRead: number | null;
+          totalArchived: number | null;
+          recentSaves: number | null;
+          recentReads: number | null;
+        };
+
+      const totalSaved = overallRow.totalSaved ?? 0;
+      const totalRead = overallRow.totalRead ?? 0;
+      const totalArchived = overallRow.totalArchived ?? 0;
+      const recentSaves = overallRow.recentSaves ?? 0;
+      const recentReads = overallRow.recentReads ?? 0;
+
+      const byTypeRows = db
+        .prepare(
+          `SELECT
+            type,
+            SUM(CASE WHEN status = 'saved'    THEN 1 ELSE 0 END) AS saved,
+            SUM(CASE WHEN status = 'read'     THEN 1 ELSE 0 END) AS read,
+            SUM(CASE WHEN status = 'archived' THEN 1 ELSE 0 END) AS archived
+          FROM notes
+          WHERE type IN ${TYPE_IN}
+          GROUP BY type`,
+        )
+        .all() as { type: string; saved: number | null; read: number | null; archived: number | null }[];
 
       const byType: Record<string, { saved: number; read: number; archived: number }> = {};
       for (const t of CONTENT_TYPES) {
+        const row = byTypeRows.find((r) => r.type === t);
         byType[t] = {
-          saved: count(`SELECT COUNT(*) AS n FROM notes WHERE type = '${t}' AND status = 'saved'`),
-          read: count(`SELECT COUNT(*) AS n FROM notes WHERE type = '${t}' AND status = 'read'`),
-          archived: count(`SELECT COUNT(*) AS n FROM notes WHERE type = '${t}' AND status = 'archived'`),
+          saved: row?.saved ?? 0,
+          read: row?.read ?? 0,
+          archived: row?.archived ?? 0,
         };
       }
 
@@ -68,7 +91,6 @@ export function createReadingStatsTool(deps: ReadingStatsToolDeps): AgentTool<ty
       ];
 
       for (const t of CONTENT_TYPES) {
-        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
         const s = byType[t]!;
         lines.push(`- ${t}: ${s.saved} unread / ${s.read} read / ${s.archived} archived`);
       }

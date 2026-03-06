@@ -36,7 +36,7 @@ Instructions:
 3. Compose a concise, well-formatted digest with sections for:
    - New/updated notes summary
    - Any patterns or connections you notice
-   - **Reading Queue** — show the top 3 unread items with their titles and a one-line description, plus the total unread count.
+   - **Reading Queue** — show the top 3 unread items with their titles and a one-line description.
 
 Keep the digest brief and actionable. Use Markdown formatting.
 If there is no recent activity, say so briefly.`;

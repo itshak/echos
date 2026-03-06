@@ -99,3 +99,57 @@ describe('reading_queue — with items', () => {
     expect(result.details).toMatchObject({ count: 3 });
   });
 });
+
+describe('reading_queue — relevance sorting', () => {
+  it('falls back to recency order when there are no recent reads', async () => {
+    // saved oldest → newest: old, mid, new
+    sqlite.upsertNote(makeMeta({ id: 'old', title: 'Old Article', tags: ['typescript'], status: 'saved', created: '2024-01-01T00:00:00Z', updated: '2024-01-01T00:00:00Z' }), '', '');
+    sqlite.upsertNote(makeMeta({ id: 'mid', title: 'Mid Article', tags: [], status: 'saved', created: '2024-02-01T00:00:00Z', updated: '2024-02-01T00:00:00Z' }), '', '');
+    sqlite.upsertNote(makeMeta({ id: 'new', title: 'New Article', tags: [], status: 'saved', created: '2024-03-01T00:00:00Z', updated: '2024-03-01T00:00:00Z' }), '', '');
+
+    const result = await callTool({});
+    const items = (result.details as { items: { id: string }[] }).items;
+    // With no interest profile, pure recency — newest first
+    expect(items[0]?.id).toBe('new');
+    expect(items[1]?.id).toBe('mid');
+    expect(items[2]?.id).toBe('old');
+  });
+
+  it('surfaces item with matching tags above a newer item with no overlap', async () => {
+    const recentDate = new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(); // 5 days ago
+
+    // Add 3 recent reads to trigger relevance note (≥3) and build interest profile with 'typescript' tag
+    sqlite.upsertNote(makeMeta({ id: 'r1', title: 'Read 1', tags: ['typescript'], category: 'tech', status: 'read', updated: recentDate, created: recentDate }), '', '');
+    sqlite.upsertNote(makeMeta({ id: 'r2', title: 'Read 2', tags: ['typescript'], category: 'tech', status: 'read', updated: recentDate, created: recentDate }), '', '');
+    sqlite.upsertNote(makeMeta({ id: 'r3', title: 'Read 3', tags: ['typescript'], category: 'tech', status: 'read', updated: recentDate, created: recentDate }), '', '');
+
+    // Unread: 'old-relevant' saved 30 days ago with matching tags, 'new-irrelevant' saved yesterday with no matching tags
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+    const yesterday = new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString();
+
+    sqlite.upsertNote(makeMeta({ id: 'old-relevant', title: 'Old Relevant', tags: ['typescript'], category: 'tech', status: 'saved', created: thirtyDaysAgo, updated: thirtyDaysAgo }), '', '');
+    sqlite.upsertNote(makeMeta({ id: 'new-irrelevant', title: 'New Irrelevant', tags: ['cooking'], category: 'food', status: 'saved', created: yesterday, updated: yesterday }), '', '');
+
+    const result = await callTool({});
+    const items = (result.details as { items: { id: string }[] }).items;
+    const ids = items.map((i) => i.id);
+    expect(ids.indexOf('old-relevant')).toBeLessThan(ids.indexOf('new-irrelevant'));
+
+    // Relevance note should appear since ≥3 recent reads
+    expect(firstText(result)).toContain('Sorted by relevance');
+  });
+
+  it('type filter still applies after relevance sorting', async () => {
+    const recentDate = new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString();
+    sqlite.upsertNote(makeMeta({ id: 'r1', title: 'Read 1', tags: ['ts'], status: 'read', updated: recentDate, created: recentDate }), '', '');
+
+    sqlite.upsertNote(makeMeta({ id: 'art1', type: 'article', title: 'Article With Tag', tags: ['ts'], status: 'saved', created: recentDate, updated: recentDate }), '', '');
+    sqlite.upsertNote(makeMeta({ id: 'vid1', type: 'youtube', title: 'Video', tags: ['ts'], status: 'saved', created: recentDate, updated: recentDate }), '', '');
+
+    const result = await callTool({ type: 'article' });
+    const text = firstText(result);
+    expect(text).toContain('Article With Tag');
+    expect(text).not.toContain('Video');
+    expect(result.details).toMatchObject({ count: 1 });
+  });
+});

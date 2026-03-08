@@ -6,19 +6,30 @@ const PRIVATE_IP_RANGES = [
   /^10\./,
   /^172\.(1[6-9]|2\d|3[01])\./,
   /^192\.168\./,
-  /^169\.254\./,
+  /^169\.254\./, // link-local / AWS IMDS (169.254.169.254) / Azure IMDS (169.254.169.254)
+  /^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./, // CGNAT (RFC 6598) — 100.64.0.0/10
   /^0\./,
-  /^fc/i,
-  /^fd/i,
-  /^fe80/i,
-  /^::1$/,
-  /^::$/,
+  /^fc/i,  // IPv6 ULA fc00::/7
+  /^fd/i,  // IPv6 ULA fd00::/8
+  /^fe80/i, // IPv6 link-local
+  /^::1$/,  // IPv6 loopback
+  /^::$/,   // IPv6 unspecified
+  /^2130706433$/, // 127.0.0.1 as a decimal integer
 ];
 
-const BLOCKED_HOSTNAMES = ['localhost', 'metadata.google.internal', 'metadata.google'];
+/** Exact hostnames that are always blocked regardless of IP check. */
+const BLOCKED_HOSTNAMES = new Set([
+  'localhost',
+  'metadata.google.internal',
+  'metadata.google',
+  '169.254.169.254',  // AWS/Azure/GCP instance metadata service
+  '168.63.129.16',    // Azure platform endpoint
+  'instance-data',    // Alternative metadata hostname used by some cloud providers
+]);
 
 export function isPrivateIp(hostname: string): boolean {
-  if (BLOCKED_HOSTNAMES.includes(hostname.toLowerCase())) {
+  const lower = hostname.toLowerCase();
+  if (BLOCKED_HOSTNAMES.has(lower)) {
     return true;
   }
   return PRIVATE_IP_RANGES.some((range) => range.test(hostname));

@@ -1,16 +1,45 @@
 import pino from 'pino';
 
+/**
+ * Pino redaction paths — any field matching these paths will be replaced with
+ * "[Redacted]" in all log output, preventing accidental secret leakage.
+ *
+ * Keep this list conservative: over-redacting hides useful debug info, but
+ * missing a field can leak credentials into log aggregators.
+ */
 const redactPaths = [
+  // Top-level secret fields
   'apiKey',
   'token',
   'password',
   'secret',
   'authorization',
   'cookie',
+  'key',
+  'credential',
+  'credentials',
+  'privateKey',
+  'clientSecret',
+  'accessToken',
+  'refreshToken',
+  'bearer',
+  // HTTP header spellings (case-insensitive keys map to lowercase in Fastify/Node)
+  'headers.authorization',
+  'headers.cookie',
+  'headers["x-api-key"]',
+  // Nested variants (one level deep — covers { config: { apiKey: ... } } etc.)
   '*.apiKey',
   '*.token',
   '*.password',
   '*.secret',
+  '*.key',
+  '*.credential',
+  '*.credentials',
+  '*.privateKey',
+  '*.clientSecret',
+  '*.accessToken',
+  '*.refreshToken',
+  '*.bearer',
 ];
 
 export function createLogger(name: string, level: string = 'info'): pino.Logger {

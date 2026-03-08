@@ -36,7 +36,11 @@ The Web API also binds to `127.0.0.1` and enforces localhost-only CORS, so it is
 All URL fetching goes through `validateUrl()` which:
 - Only allows `http:` and `https:` protocols
 - Blocks private IP ranges (10.x, 172.16-31.x, 192.168.x, 127.x)
-- Blocks localhost and metadata endpoints
+- Blocks link-local (`169.254.x.x`) — covers AWS/Azure/GCP instance metadata service (IMDS)
+- Blocks Azure platform endpoint (`168.63.129.16`)
+- Blocks CGNAT range (`100.64.0.0/10`, RFC 6598)
+- Blocks IPv6 ULA, link-local, loopback, and unspecified addresses
+- Blocks `localhost`, `instance-data`, and cloud metadata hostnames
 - Applied before any fetch operation
 
 ## Content Sanitization
@@ -46,15 +50,43 @@ All URL fetching goes through `validateUrl()` which:
 - `escapeXml()` for XML context escaping
 - AI output treated as untrusted data
 
+## Content Size Limits
+
+All external text content is validated against a maximum size before reaching
+the AI or storage layer, preventing oversized-payload attacks:
+
+```typescript
+import { validateContentSize, validateBufferSize } from '@echos/shared';
+
+// Throws ValidationError if content exceeds 500 000 characters
+validateContentSize(text, { label: 'article body' });
+
+// Throws ValidationError if buffer exceeds 10 MiB
+validateBufferSize(audioBuffer, { label: 'voice message' });
+```
+
+Default limits (overridable per call):
+- Text: 500 000 characters
+- Binary: 10 MiB
+
 ## Rate Limiting
 
 - Token bucket algorithm (20 tokens, 1 token/second refill)
 - Per-user tracking
+- **Bounded to 10 000 distinct keys** — evicts the oldest entry when at capacity, preventing memory exhaustion from many unique callers
 - Applied at middleware level in all interfaces
+
+## Timing-safe Token Comparison
+
+The Web API bearer-token check uses `timingSafeStringEqual()` (backed by
+`crypto.timingSafeEqual` after SHA-256 hashing) instead of `===`. This
+prevents timing side-channel attacks where an attacker could measure response
+latency to guess the token character-by-character.
 
 ## Secret Management
 
-- Pino configured with redaction paths for common secret field names
+- Pino configured with an expanded set of redaction paths covering common secret field names: `apiKey`, `token`, `password`, `secret`, `authorization`, `cookie`, `key`, `credential`, `credentials`, `privateKey`, `clientSecret`, `accessToken`, `refreshToken`, `bearer`, and nested variants
+- HTTP headers `Authorization` and `Cookie` are also redacted
 - Secrets never included in error messages
 - `.env` files gitignored
 

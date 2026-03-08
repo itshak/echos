@@ -33,6 +33,11 @@ export {
   escapeXml,
   createRateLimiter,
   type RateLimiter,
+  validateContentSize,
+  validateBufferSize,
+  CONTENT_SIZE_DEFAULTS,
+  type ContentSizeOptions,
+  timingSafeStringEqual,
 } from './security/index.js';
 export { isValidCron, isValidCronField } from './cron.js';
 export { getVersion } from './version.js';

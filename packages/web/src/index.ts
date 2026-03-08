@@ -2,6 +2,7 @@ import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import type { Logger } from 'pino';
 import type { Config, InterfaceAdapter } from '@echos/shared';
+import { timingSafeStringEqual } from '@echos/shared';
 import type { AgentDeps } from '@echos/core';
 import { registerChatRoutes } from './api/chat.js';
 import { registerScheduleRoutes } from './api/schedules.js';
@@ -51,7 +52,8 @@ export function createWebAdapter(options: WebAdapterOptions): InterfaceAdapter {
         if (request.routeOptions?.url === '/health') return;
 
         const auth = request.headers['authorization'];
-        if (!auth || !auth.startsWith('Bearer ') || auth.slice(7) !== config.webApiKey) {
+        const token = auth?.startsWith('Bearer ') ? auth.slice(7) : undefined;
+        if (!token || !config.webApiKey || !timingSafeStringEqual(token, config.webApiKey)) {
           logger.warn({ url: request.url, ip: request.ip }, 'Unauthorized web API request');
           return reply.status(401).send({ error: 'Unauthorized' });
         }

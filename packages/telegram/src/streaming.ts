@@ -161,6 +161,7 @@ export async function streamAgentResponse(
 
   let toolExecuted = false;
   const pendingExports: ExportFileResult[] = [];
+  const pendingContent: string[] = [];
 
   /**
    * Send an edit with the current content.
@@ -262,6 +263,19 @@ export async function streamAgentResponse(
         // ignore parse errors — agent will describe the failure in text
       }
     }
+
+    if (event.type === 'tool_execution_end' && !event.isError && event.toolName === 'create_content') {
+      try {
+        const resultContent = (event.result as { content?: Array<{ type: string; text?: string }> } | undefined)
+          ?.content;
+        const textContent = resultContent?.find((c) => c.type === 'text');
+        if (textContent?.text) {
+          pendingContent.push(textContent.text);
+        }
+      } catch {
+        // ignore parse errors
+      }
+    }
   });
 
   // Send initial status message
@@ -301,6 +315,25 @@ export async function streamAgentResponse(
     await updateMessage(fallbackText || 'Done.');
   } else {
     await updateMessage('Done.');
+  }
+
+  // Deliver any created content (full text, sent as separate message so it doesn't get truncated)
+  for (const content of pendingContent) {
+    try {
+      const html = markdownToHtml(content);
+      const truncated =
+        html.length > MAX_MESSAGE_LENGTH ? html.slice(0, MAX_MESSAGE_LENGTH - 3) + '...' : html;
+      await ctx.reply(truncated, { parse_mode: 'HTML' });
+    } catch {
+      // Non-fatal: try plain text fallback
+      try {
+        const truncated =
+          content.length > MAX_MESSAGE_LENGTH ? content.slice(0, MAX_MESSAGE_LENGTH - 3) + '...' : content;
+        await ctx.reply(truncated);
+      } catch {
+        // ignore
+      }
+    }
   }
 
   // Deliver any exported files

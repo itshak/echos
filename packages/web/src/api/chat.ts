@@ -49,6 +49,7 @@ export function registerChatRoutes(
     let lastAssistantMessage: AgentMessage | undefined;
     const toolCalls: Array<{ name: string; result: string }> = [];
     let toolExecuted = false;
+    let pendingToolContent = '';
 
     const unsubscribe = agent.subscribe((event) => {
       if (event.type === 'message_update' && 'assistantMessageEvent' in event) {
@@ -72,6 +73,18 @@ export function registerChatRoutes(
           name: event.toolName,
           result: event.isError ? 'error' : 'success',
         });
+        if (!event.isError && event.toolName === 'create_content') {
+          try {
+            const resultContent = (event.result as { content?: Array<{ type: string; text?: string }> } | undefined)
+              ?.content;
+            const textContent = resultContent?.find((c) => c.type === 'text');
+            if (textContent?.text) {
+              pendingToolContent = textContent.text;
+            }
+          } catch {
+            // ignore
+          }
+        }
       }
     });
 
@@ -99,8 +112,11 @@ export function registerChatRoutes(
       });
     }
 
+    // If the agent's text response is empty but a content-creating tool ran, surface its output
+    const finalResponse = responseText || pendingToolContent;
+
     return reply.send({
-      response: responseText,
+      response: finalResponse,
       toolCalls,
     });
   });

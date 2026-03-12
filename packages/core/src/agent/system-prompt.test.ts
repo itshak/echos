@@ -45,6 +45,7 @@ describe('SYSTEM_PROMPT', () => {
     expect(SYSTEM_PROMPT).toContain('type=note');
   });
 
+
   it('references tweets in content status section', () => {
     expect(SYSTEM_PROMPT).toContain('tweets');
     expect(SYSTEM_PROMPT).toContain('article, tweet, or YouTube video');

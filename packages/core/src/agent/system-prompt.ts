@@ -42,6 +42,7 @@ When the user asks to find, re-export, or reference a past saved conversation:
 2. Only use list_notes with date filters as a secondary pass if the semantic search returns nothing useful.
 3. Do NOT assume type=conversation — conversations saved before the save_conversation tool was introduced are stored as type=note and are only findable by content.
 
+
 ## Todos vs Reminders
 
 **Todos** — action items to do; no specific time required.

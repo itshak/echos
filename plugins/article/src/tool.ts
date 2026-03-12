@@ -2,6 +2,7 @@ import { Type, type Static } from '@mariozechner/pi-ai';
 import type { AgentTool } from '@mariozechner/pi-agent-core';
 import { v4 as uuidv4 } from 'uuid';
 import type { NoteMetadata } from '@echos/shared';
+import { validateContentSize } from '@echos/shared';
 import type { PluginContext } from '@echos/core';
 import { categorizeContent, type ProcessingMode } from '@echos/core';
 import { processArticle } from './processor.js';
@@ -41,6 +42,7 @@ export function createSaveArticleTool(context: PluginContext): AgentTool<typeof 
       });
 
       const processed = await processArticle(params.url, context.logger);
+      validateContentSize(processed.content, { label: 'article content' });
 
       const now = new Date().toISOString();
       const id = uuidv4();

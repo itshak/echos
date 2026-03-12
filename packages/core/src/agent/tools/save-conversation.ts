@@ -2,6 +2,7 @@ import { Type, type Static } from '@mariozechner/pi-ai';
 import type { AgentTool } from '@mariozechner/pi-agent-core';
 import { v4 as uuidv4 } from 'uuid';
 import type { NoteMetadata } from '@echos/shared';
+import { validateContentSize } from '@echos/shared';
 import type { SqliteStorage } from '../../storage/sqlite.js';
 import type { MarkdownStorage } from '../../storage/markdown.js';
 import type { VectorStorage } from '../../storage/vectordb.js';
@@ -50,6 +51,8 @@ export function saveConversationTool(deps: SaveConversationToolDeps): AgentTool<
         status: 'read',
         inputSource: 'text',
       };
+
+      validateContentSize(params.summary, { label: 'conversation summary' });
 
       const filePath = deps.markdown.save(metadata, params.summary);
       deps.sqlite.upsertNote(metadata, params.summary, filePath);

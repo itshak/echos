@@ -2,6 +2,7 @@ import { Type, type Static } from '@mariozechner/pi-ai';
 import type { AgentTool } from '@mariozechner/pi-agent-core';
 import { v4 as uuidv4 } from 'uuid';
 import type { NoteMetadata } from '@echos/shared';
+import { validateContentSize } from '@echos/shared';
 import type { PluginContext } from '@echos/core';
 import { categorizeContent, type ProcessingMode } from '@echos/core';
 import { processYoutube, type ProxyConfig } from './processor.js';
@@ -49,6 +50,7 @@ export function createSaveYoutubeTool(context: PluginContext): AgentTool<typeof 
       });
 
       const processed = await processYoutube(params.url, context.logger, openaiApiKey, proxyConfig);
+      validateContentSize(processed.content, { label: 'video transcript' });
 
       const now = new Date().toISOString();
       const id = uuidv4();

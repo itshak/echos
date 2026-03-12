@@ -2,6 +2,7 @@ import { Type, type Static } from '@mariozechner/pi-ai';
 import type { AgentTool } from '@mariozechner/pi-agent-core';
 import { v4 as uuidv4 } from 'uuid';
 import type { NoteMetadata } from '@echos/shared';
+import { validateContentSize } from '@echos/shared';
 import type { PluginContext } from '@echos/core';
 import { categorizeContent, type ProcessingMode } from '@echos/core';
 import { processTweet } from './processor.js';
@@ -45,6 +46,7 @@ export function createSaveTweetTool(context: PluginContext): AgentTool<typeof sc
       let processed;
       try {
         processed = await processTweet(params.url, context.logger);
+        validateContentSize(processed.content, { label: 'tweet content' });
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         context.logger.error({ error, url: params.url }, 'save_tweet failed');

@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import type { Agent, AgentMessage } from '@mariozechner/pi-agent-core';
 import type { AgentDeps } from '@echos/core';
 import { createEchosAgent, isAgentMessageOverflow, createContextMessage, createUserMessage, resolveModel, MODEL_PRESETS, type ModelPreset } from '@echos/core';
+import { validateContentSize } from '@echos/shared';
 import type { Logger } from 'pino';
 
 const sessions = new Map<number, Agent>();
@@ -40,6 +41,11 @@ export function registerChatRoutes(
     if (!isAllowed(userId)) {
       logger.warn({ userId }, 'Unauthorized userId in web chat request');
       return reply.status(403).send({ error: 'Forbidden' });
+    }
+    try {
+      validateContentSize(message, { label: 'message' });
+    } catch {
+      return reply.status(413).send({ error: 'Message exceeds maximum allowed size' });
     }
 
     const agent = getOrCreateAgent(userId, agentDeps);
@@ -166,6 +172,11 @@ export function registerChatRoutes(
       logger.warn({ userId }, 'Unauthorized userId in web steer request');
       return reply.status(403).send({ error: 'Forbidden' });
     }
+    try {
+      validateContentSize(message, { label: 'message' });
+    } catch {
+      return reply.status(413).send({ error: 'Message exceeds maximum allowed size' });
+    }
     const agent = sessions.get(userId);
     if (!agent) {
       return reply.status(404).send({ error: 'No active session' });
@@ -188,6 +199,11 @@ export function registerChatRoutes(
     if (!isAllowed(userId)) {
       logger.warn({ userId }, 'Unauthorized userId in web followup request');
       return reply.status(403).send({ error: 'Forbidden' });
+    }
+    try {
+      validateContentSize(message, { label: 'message' });
+    } catch {
+      return reply.status(413).send({ error: 'Message exceeds maximum allowed size' });
     }
     const agent = sessions.get(userId);
     if (!agent) {

@@ -1,6 +1,7 @@
 import { Type, type Static } from '@mariozechner/pi-ai';
 import type { AgentTool } from '@mariozechner/pi-agent-core';
 import type { NoteMetadata } from '@echos/shared';
+import { validateContentSize } from '@echos/shared';
 import type { SqliteStorage } from '../../storage/sqlite.js';
 import type { MarkdownStorage } from '../../storage/markdown.js';
 import type { VectorStorage } from '../../storage/vectordb.js';
@@ -38,6 +39,10 @@ export function updateNoteTool(deps: UpdateNoteToolDeps): AgentTool<typeof schem
       if (params.title) partialMeta.title = params.title;
       if (params.tags) partialMeta.tags = params.tags;
       if (params.category) partialMeta.category = params.category;
+
+      if (params.content !== undefined) {
+        validateContentSize(params.content, { label: 'note content' });
+      }
 
       let updated: { metadata: NoteMetadata; content: string; filePath: string };
 

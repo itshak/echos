@@ -2,6 +2,7 @@ import { Type, type Static } from '@mariozechner/pi-ai';
 import type { AgentTool } from '@mariozechner/pi-agent-core';
 import { v4 as uuidv4 } from 'uuid';
 import type { NoteMetadata, ContentType, InputSource } from '@echos/shared';
+import { validateContentSize } from '@echos/shared';
 import type { SqliteStorage } from '../../storage/sqlite.js';
 import type { MarkdownStorage } from '../../storage/markdown.js';
 import type { VectorStorage } from '../../storage/vectordb.js';
@@ -60,6 +61,8 @@ export function createNoteTool(deps: CreateNoteToolDeps): AgentTool<typeof schem
         status: 'read',
         inputSource: (params.inputSource as InputSource | undefined) ?? 'text',
       };
+
+      validateContentSize(params.content, { label: 'note content' });
 
       const filePath = deps.markdown.save(metadata, params.content);
       deps.sqlite.upsertNote(metadata, params.content, filePath);

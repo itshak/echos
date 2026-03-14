@@ -41,7 +41,7 @@ export function listNotesTool(deps: ListNotesToolDeps): AgentTool<typeof schema>
     description:
       'Browse notes by type or status. Use status="saved" for reading list, status="read" for consumed content. Always normalize user-provided dates to ISO 8601 (e.g. "22/12/2025" → "2025-12-22", "last August" → dateFrom="2025-08-01" dateTo="2025-08-31").',
     parameters: schema,
-    execute: async (_toolCallId, params: Params) => {
+    execute: async (_toolCallId: string, params: Params) => {
       const opts: ListNotesOptions = {
         limit: params.limit ?? 20,
         offset: params.offset ?? 0,
@@ -69,7 +69,10 @@ export function listNotesTool(deps: ListNotesToolDeps): AgentTool<typeof schema>
 
       return {
         content: [{ type: 'text' as const, text: `Showing ${rows.length} note(s):\n\n${formatted}` }],
-        details: { count: rows.length },
+        details: {
+          count: rows.length,
+          items: rows.map((r) => ({ id: r.id, title: r.title, type: r.type, status: r.status })),
+        },
       };
     },
   };

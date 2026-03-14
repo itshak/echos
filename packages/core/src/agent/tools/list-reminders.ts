@@ -23,7 +23,7 @@ export function listRemindersTool(deps: ListRemindersToolDeps): AgentTool<typeof
         label: 'List Reminders',
         description: 'List time-based reminders (kind="reminder"). Filter by completed status. Use list_todos for action items.',
         parameters: schema,
-        execute: async (_toolCallId, params: Params) => {
+        execute: async (_toolCallId: string, params: Params) => {
             const reminders = deps.sqlite.listReminders(params.completed);
 
             if (reminders.length === 0) {
@@ -47,7 +47,14 @@ export function listRemindersTool(deps: ListRemindersToolDeps): AgentTool<typeof
 
             return {
                 content: [{ type: 'text' as const, text: lines.join('\n') }],
-                details: { count: reminders.length },
+                details: {
+                    count: reminders.length,
+                    items: reminders.map((r) => ({
+                        id: r.id,
+                        title: r.title,
+                        completed: r.completed,
+                    })),
+                },
             };
         },
     };

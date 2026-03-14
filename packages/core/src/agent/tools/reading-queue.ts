@@ -126,7 +126,15 @@ export function createReadingQueueTool(deps: ReadingQueueToolDeps): AgentTool<ty
 
       return {
         content: [{ type: 'text' as const, text: lines.join('\n') }],
-        details: { count: items.length, items: items.map((i) => ({ id: i.id, title: i.title, type: i.type })) },
+        details: {
+          count: items.length,
+          items: items.map((i) => ({
+            id: i.id,
+            title: i.title,
+            type: i.type,
+            sourceUrl: i.sourceUrl ?? undefined,
+          })),
+        },
       };
     },
   };

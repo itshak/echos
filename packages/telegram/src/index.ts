@@ -20,6 +20,7 @@ import { streamAgentResponse } from './streaming.js';
 import { createTelegramNotificationService } from './notification.js';
 import { handleVoiceMessage } from './voice.js';
 import { handlePhotoMessage } from './photo.js';
+import { decodeCallback } from './keyboards.js';
 
 export interface TelegramAdapterOptions {
   config: Config;
@@ -171,6 +172,66 @@ export function createTelegramAdapter(options: TelegramAdapterOptions): Telegram
 
     agent.followUp(createUserMessage(text));
     await ctx.reply('📋 Queued — will run after the current task finishes.');
+  });
+
+  // Handle inline keyboard button presses
+  bot.on('callback_query:data', async (ctx) => {
+    const parsed = decodeCallback(ctx.callbackQuery.data);
+    if (!parsed) {
+      await ctx.answerCallbackQuery({ text: 'Unknown action.' });
+      return;
+    }
+
+    const { action, id } = parsed;
+    const { sqlite, markdown } = agentDeps;
+
+    try {
+      if (action === 'mr' || action === 'ar') {
+        const status = action === 'mr' ? 'read' : 'archived';
+        const note = sqlite.getNote(id);
+        if (!note) {
+          await ctx.answerCallbackQuery({ text: 'Note not found.' });
+          return;
+        }
+        sqlite.updateNoteStatus(id, status);
+        try { markdown.update(note.filePath, { status }); } catch { /* non-fatal */ }
+        const verb = action === 'mr' ? 'read' : 'archived';
+        await ctx.answerCallbackQuery({ text: `Marked as ${verb}.` });
+      } else if (action === 'cr') {
+        const reminder = sqlite.getReminder(id);
+        if (!reminder) {
+          await ctx.answerCallbackQuery({ text: 'Reminder not found.' });
+          return;
+        }
+        sqlite.upsertReminder({
+          ...reminder,
+          completed: true,
+          updated: new Date().toISOString(),
+        });
+        await ctx.answerCallbackQuery({ text: `Completed: ${reminder.title}` });
+      }
+
+      // Remove the pressed button from the keyboard
+      const msg = ctx.callbackQuery.message;
+      if (msg) {
+        const existingMarkup = msg.reply_markup;
+        if (existingMarkup?.inline_keyboard) {
+          const callbackData = ctx.callbackQuery.data;
+          const filtered = existingMarkup.inline_keyboard
+            .map((row) => row.filter((btn) => !('callback_data' in btn) || btn.callback_data !== callbackData))
+            .filter((row) => row.length > 0);
+
+          if (filtered.length > 0) {
+            await ctx.editMessageReplyMarkup({ reply_markup: { inline_keyboard: filtered } });
+          } else {
+            await ctx.editMessageReplyMarkup({ reply_markup: { inline_keyboard: [] } });
+          }
+        }
+      }
+    } catch (err) {
+      logger.error({ err, action, id }, 'Callback query error');
+      await ctx.answerCallbackQuery({ text: 'Something went wrong.' });
+    }
   });
 
   // Handle all text messages via agent

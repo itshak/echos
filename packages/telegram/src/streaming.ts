@@ -1,8 +1,13 @@
 import { readFile, unlink } from 'node:fs/promises';
 import type { Context } from 'grammy';
-import { InputFile } from 'grammy';
+import { InputFile, InlineKeyboard } from 'grammy';
 import type { Agent, AgentEvent, AgentMessage } from '@mariozechner/pi-agent-core';
 import { isAgentMessageOverflow, createContextMessage, createUserMessage, type ExportFileResult } from '@echos/core';
+import {
+  buildReadingQueueKeyboard,
+  buildListNotesKeyboard,
+  buildRemindersKeyboard,
+} from './keyboards.js';
 
 const EDIT_DEBOUNCE_MS = 1000;
 const MAX_MESSAGE_LENGTH = 4096;
@@ -191,6 +196,7 @@ export async function streamAgentResponse(
   let toolExecuted = false;
   const pendingExports: ExportFileResult[] = [];
   const pendingContent: string[] = [];
+  let pendingKeyboard: InlineKeyboard | undefined;
 
   /**
    * Send an edit with the current content.
@@ -305,6 +311,27 @@ export async function streamAgentResponse(
         // ignore parse errors
       }
     }
+
+    // Capture actionable tool results for inline keyboards
+    if (event.type === 'tool_execution_end' && !event.isError) {
+      try {
+        const details = (event.result as { details?: Record<string, unknown> } | undefined)?.details;
+        const items = details?.['items'] as Array<Record<string, unknown>> | undefined;
+        if (items && items.length > 0) {
+          let kb: InlineKeyboard | undefined;
+          if (event.toolName === 'reading_queue') {
+            kb = buildReadingQueueKeyboard(items as Array<{ id: string; title: string; type: string; sourceUrl?: string }>);
+          } else if (event.toolName === 'list_notes') {
+            kb = buildListNotesKeyboard(items as Array<{ id: string; title: string; type: string; status: string | null }>);
+          } else if (event.toolName === 'list_reminders') {
+            kb = buildRemindersKeyboard(items as Array<{ id: string; title: string; completed: boolean }>);
+          }
+          if (kb) pendingKeyboard = kb;
+        }
+      } catch {
+        // ignore — keyboards are non-essential
+      }
+    }
   });
 
   // Send initial status message
@@ -379,6 +406,17 @@ export async function streamAgentResponse(
       }
     } catch {
       // Non-fatal: agent already described the export in text
+    }
+  }
+
+  // Attach inline keyboard for actionable tool results
+  if (pendingKeyboard && messageId && !agentError) {
+    try {
+      await ctx.api.editMessageReplyMarkup(ctx.chat!.id, messageId, {
+        reply_markup: pendingKeyboard,
+      });
+    } catch {
+      // Non-fatal: keyboard is a convenience feature
     }
   }
 

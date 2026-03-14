@@ -96,6 +96,16 @@ Ask the agent to export notes and it will send the file as a document attachment
 
 Supported formats: `markdown`, `text`, `json`, `zip`. All exports are sent as document attachments. Single-note markdown/text exports are delivered directly as small document files; multi-note exports or explicit `zip`/`json` format requests write a temporary file to `data/exports/` before sending. The temporary file is deleted automatically after the bot sends it.
 
+### Inline Keyboards
+
+Certain tool results include inline keyboard buttons for quick actions without typing:
+
+- **Reading queue** — "Mark Read" buttons per item, plus link buttons for items with URLs
+- **List notes** — "Mark Read" and "Archive" buttons for non-archived items
+- **Reminders** — "Complete" buttons for pending reminders
+
+When you press a button, the action executes immediately (no AI round-trip) and the button is removed from the keyboard. These actions work the same as asking the agent to mark content as read, archive notes, or complete reminders.
+
 ### Features
 
 - ✅ Streaming responses (live updates as AI thinks)
@@ -106,6 +116,7 @@ Supported formats: `markdown`, `text`, `json`, `zip`. All exports are sent as do
 - ✅ Photo/document support
 - ✅ Mid-run steering and follow-up queuing
 - ✅ File exports delivered as document attachments
+- ✅ Inline keyboards for quick actions on list results
 
 ### Security
 
@@ -455,6 +466,7 @@ For inline (single-note markdown/text) exports, content is written to stdout or 
 | **Authentication** | ✅ User IDs | ✅ API key + user IDs | ❌ Local only |
 | **Network exposure** | Telegram servers | localhost only | None |
 | **Streaming** | ✅ Yes | ❌ No | ✅ Yes |
+| **Inline actions** | ✅ Keyboards | ❌ No | ❌ No |
 | **Mobile Access** | ✅ Yes | ✅ Yes (localhost) | ❌ No |
 | **Voice Input** | ✅ Yes | ❌ No | ❌ No |
 | **Scriptable** | ❌ No | ✅ Yes (curl) | ✅ Yes (pipe) |

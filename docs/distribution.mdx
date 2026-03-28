@@ -62,7 +62,7 @@ echos "search my notes"    # use the CLI
 
 ```bash
 cd docker
-docker-compose up -d
+docker compose up -d
 ```
 
 Docker handles all dependencies (Node.js, Redis) in containers. See [Deployment](https://docs.echos.sh/deployment) for full Docker setup.
@@ -182,8 +182,8 @@ pnpm echos "what did I save yesterday?"
   <Tab title="Docker">
     ```bash
     cd docker
-    docker-compose stop      # stop
-    docker-compose restart   # restart
+    docker compose stop      # stop
+    docker compose restart   # restart
     ```
   </Tab>
 </Tabs>
@@ -249,7 +249,9 @@ pnpm echos "what did I save yesterday?"
 # CLI
 echos --version
 
-# Or from the repo
+# Or from the repo (from the EchOS repo root)
+cd echos          # or the path to your cloned repo
+git fetch --tags  # ensure tags are available locally
 git describe --tags --abbrev=0
 ```
 

@@ -3,9 +3,11 @@
   "name": "EchOS",
   "logo": {
     "light": "/logo/light.svg",
-    "dark": "/logo/dark.svg"
+    "dark": "/logo/dark.svg",
+    "height": 100
   },
   "favicon": "/favicon.svg",
+  "css": "/global.css",
   "colors": {
     "primary": "#C4863A",
     "light": "#D9A05C",

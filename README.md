@@ -1,6 +1,8 @@
 <div align="center">
 
-# 🔮 EchOS
+<img src="assets/symbol.png" alt="EchOS" width="120" />
+
+# EchOS
 
 **Your personal AI knowledge system — self-hosted, agent-driven, and always private.**
 

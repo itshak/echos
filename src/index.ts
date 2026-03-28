@@ -215,6 +215,7 @@ async function main(): Promise<void> {
     getNotificationService: () => notificationService,
     config: {
       ...(config.openaiApiKey ? { openaiApiKey: config.openaiApiKey } : {}),
+      ...(config.whisperLanguage ? { whisperLanguage: config.whisperLanguage } : {}),
       ...(config.anthropicApiKey ? { anthropicApiKey: config.anthropicApiKey } : {}),
       ...(config.llmApiKey ? { llmApiKey: config.llmApiKey } : {}),
       ...(config.llmBaseUrl ? { llmBaseUrl: config.llmBaseUrl } : {}),

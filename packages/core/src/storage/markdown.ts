@@ -1,5 +1,5 @@
 import { readFileSync, writeFileSync, unlinkSync, existsSync, mkdirSync, readdirSync, renameSync } from 'node:fs';
-import { join, dirname, relative } from 'node:path';
+import { join, dirname, relative, resolve } from 'node:path';
 import matter from 'gray-matter';
 import type { Logger } from 'pino';
 import type { NoteMetadata, Note, ContentType, ContentStatus, InputSource } from '@echos/shared';
@@ -181,8 +181,10 @@ export function createMarkdownStorage(baseDir: string, logger: Logger): Markdown
 
     moveToTrash(filePath: string): string {
       const trashDir = join(baseDir, '.trash');
-      // Preserve relative path structure inside .trash/
-      const rel = relative(baseDir, filePath);
+      // Resolve to absolute before computing relative — filePath may be stored as relative
+      const abs = resolve(filePath);
+      const absBase = resolve(baseDir);
+      const rel = relative(absBase, abs);
       const trashPath = join(trashDir, rel);
       mkdirSync(dirname(trashPath), { recursive: true });
 

@@ -166,17 +166,22 @@ describe('timingSafeStringEqual', () => {
 
 describe('sanitizeHtml — HTML entity decoding', () => {
   it('decodes decimal numeric entities (e.g. &#39; → apostrophe)', () => {
-    const result = sanitizeHtml("it&#39;s great");
-    expect(result).toBe("it&#x27;s great");
+    const result = sanitizeHtml('it&#39;s great');
+    expect(result).toBe('it&#x27;s great');
   });
 
   it('decodes hex numeric entities (e.g. &#x27; → apostrophe)', () => {
-    const result = sanitizeHtml("it&#x27;s great");
-    expect(result).toBe("it&#x27;s great");
+    const result = sanitizeHtml('it&#x27;s great');
+    expect(result).toBe('it&#x27;s great');
+  });
+
+  it('decodes uppercase hex numeric entities (e.g. &#X27; → apostrophe)', () => {
+    const result = sanitizeHtml('it&#X27;s great');
+    expect(result).toBe('it&#x27;s great');
   });
 
   it('does not double-encode decimal apostrophe entities from YouTube transcripts', () => {
-    const youtubeSnippet = "it&#39;s a great video";
+    const youtubeSnippet = 'it&#39;s a great video';
     const result = sanitizeHtml(youtubeSnippet);
     expect(result).not.toContain('&amp;#39;');
     expect(result).not.toContain('&amp;#x27;');
@@ -193,6 +198,22 @@ describe('sanitizeHtml — HTML entity decoding', () => {
     const result = sanitizeHtml('&#1114112;'); // 0x110000 — above max code point
     // Entity is not decoded; the & is re-escaped, producing &amp;#1114112;
     expect(result).toBe('&amp;#1114112;');
+  });
+
+  it('rejects C0 control character entities (except TAB, LF, CR)', () => {
+    // NUL (&#0;) should not be decoded
+    const nul = sanitizeHtml('a&#0;b');
+    expect(nul).toBe('a&amp;#0;b');
+    expect(nul).not.toContain('\0');
+
+    // BEL (&#7;) should not be decoded
+    const bel = sanitizeHtml('a&#7;b');
+    expect(bel).toBe('a&amp;#7;b');
+
+    // TAB (&#9;), LF (&#10;), CR (&#13;) ARE allowed
+    expect(sanitizeHtml('a&#9;b')).toBe('a\tb');
+    expect(sanitizeHtml('a&#10;b')).toBe('a\nb');
+    expect(sanitizeHtml('a&#13;b')).toBe('a\rb');
   });
 
   it('strips HTML tags and re-encodes special characters', () => {

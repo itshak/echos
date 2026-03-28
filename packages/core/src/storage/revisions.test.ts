@@ -119,26 +119,27 @@ describe('RevisionStorage', () => {
     expect(pruned).toBe(0);
   });
 
-  it('revisions are cascade-deleted when note is deleted', () => {
+  it('revisions are cascade-deleted when note is purged', () => {
     storage.upsertNote(makeMeta(), 'content', '/test.md');
     revisions.saveRevision('note-1', 'V1', 'content 1', '', 'general');
     revisions.saveRevision('note-1', 'V2', 'content 2', '', 'general');
 
     expect(revisions.getRevisions('note-1')).toHaveLength(2);
 
-    storage.deleteNote('note-1');
+    // purgeNote does a hard DELETE (not soft-delete), triggering the cascade
+    storage.purgeNote('note-1');
 
     expect(revisions.getRevisions('note-1')).toHaveLength(0);
   });
 
-  it('keeps revisions for other notes when one note is deleted', () => {
+  it('keeps revisions for other notes when one note is purged', () => {
     storage.upsertNote(makeMeta({ id: 'note-1' }), 'content', '/a.md');
     storage.upsertNote(makeMeta({ id: 'note-2' }), 'content', '/b.md');
 
     revisions.saveRevision('note-1', 'V1', 'content', '', 'general');
     revisions.saveRevision('note-2', 'V1', 'content', '', 'general');
 
-    storage.deleteNote('note-1');
+    storage.purgeNote('note-1');
 
     expect(revisions.getRevisions('note-1')).toHaveLength(0);
     expect(revisions.getRevisions('note-2')).toHaveLength(1);

@@ -34,7 +34,15 @@ export const configSchema = z
 
   // Whisper transcription language (ISO-639-1 code, e.g. 'en', 'fr', 'de').
   // If not set, Whisper auto-detects the language (may misidentify short clips).
-  whisperLanguage: z.string().regex(/^[a-z]{2}$/, 'Must be an ISO-639-1 language code (e.g. en, fr, de)').optional(),
+  whisperLanguage: z.preprocess(
+    (val) => {
+      if (typeof val !== 'string') return val;
+      const trimmed = val.trim();
+      if (trimmed === '') return undefined;
+      return trimmed.toLowerCase();
+    },
+    z.string().regex(/^[a-z]{2}$/, 'Must be an ISO-639-1 language code (e.g. en, fr, de)').optional(),
+  ),
 
   // Multi-provider LLM support
   llmApiKey: z.string().min(1).optional(),

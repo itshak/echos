@@ -3,6 +3,7 @@ import { isPrivateIp, validateUrl } from './url-validator.js';
 import { createRateLimiter } from './rate-limiter.js';
 import { validateContentSize, validateBufferSize, CONTENT_SIZE_DEFAULTS } from './content-size.js';
 import { timingSafeStringEqual } from './timing-safe.js';
+import { sanitizeHtml } from './sanitize.js';
 
 // ---------------------------------------------------------------------------
 // URL Validator — additional coverage for new blocked entries
@@ -156,5 +157,51 @@ describe('timingSafeStringEqual', () => {
   it('handles strings of different lengths without throwing', () => {
     expect(() => timingSafeStringEqual('short', 'a-much-longer-secret-value')).not.toThrow();
     expect(timingSafeStringEqual('short', 'a-much-longer-secret-value')).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// sanitizeHtml — entity decoding
+// ---------------------------------------------------------------------------
+
+describe('sanitizeHtml — HTML entity decoding', () => {
+  it('decodes decimal numeric entities (e.g. &#39; → apostrophe)', () => {
+    const result = sanitizeHtml("it&#39;s great");
+    expect(result).toBe("it&#x27;s great");
+  });
+
+  it('decodes hex numeric entities (e.g. &#x27; → apostrophe)', () => {
+    const result = sanitizeHtml("it&#x27;s great");
+    expect(result).toBe("it&#x27;s great");
+  });
+
+  it('does not double-encode decimal apostrophe entities from YouTube transcripts', () => {
+    const youtubeSnippet = "it&#39;s a great video";
+    const result = sanitizeHtml(youtubeSnippet);
+    expect(result).not.toContain('&amp;#39;');
+    expect(result).not.toContain('&amp;#x27;');
+  });
+
+  it('does not crash on invalid surrogate numeric entities and sanitizes the ampersand', () => {
+    const result = sanitizeHtml('&#55296;'); // 0xD800 — invalid surrogate
+    // Entity is not decoded; the & is re-escaped, producing &amp;#55296;
+    expect(result).toBe('&amp;#55296;');
+    expect(result).not.toContain('\uD800'); // no actual surrogate character
+  });
+
+  it('does not crash on out-of-range numeric entities and sanitizes the ampersand', () => {
+    const result = sanitizeHtml('&#1114112;'); // 0x110000 — above max code point
+    // Entity is not decoded; the & is re-escaped, producing &amp;#1114112;
+    expect(result).toBe('&amp;#1114112;');
+  });
+
+  it('strips HTML tags and re-encodes special characters', () => {
+    const result = sanitizeHtml('<b>hello & world</b>');
+    expect(result).toBe('hello &amp; world');
+  });
+
+  it('decodes &amp; and re-encodes it once', () => {
+    const result = sanitizeHtml('A &amp; B');
+    expect(result).toBe('A &amp; B');
   });
 });

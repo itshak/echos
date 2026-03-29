@@ -89,11 +89,14 @@ export function createKnowledgeStatsTool(deps: KnowledgeStatsToolDeps): AgentToo
       const allWeeks: { week: string; count: number }[] = [];
       for (let i = 7; i >= 0; i--) {
         const d = new Date(Date.now() - i * 7 * 24 * 60 * 60 * 1000);
-        // ISO week: YYYY-Www
+        // Match SQLite strftime('%Y-W%W'): week 0 = days before first Monday,
+        // week 1 starts on the first Monday of the year.
         const year = d.getFullYear();
         const startOfYear = new Date(year, 0, 1);
         const dayOfYear = Math.floor((d.getTime() - startOfYear.getTime()) / (24 * 60 * 60 * 1000));
-        const weekNum = Math.ceil((dayOfYear + startOfYear.getDay() + 1) / 7);
+        const firstMondayDoy = (8 - startOfYear.getDay()) % 7;
+        const weekNum =
+          dayOfYear < firstMondayDoy ? 0 : 1 + Math.floor((dayOfYear - firstMondayDoy) / 7);
         const week = `${year}-W${String(weekNum).padStart(2, '0')}`;
         allWeeks.push({ week, count: weekMap.get(week) ?? 0 });
       }

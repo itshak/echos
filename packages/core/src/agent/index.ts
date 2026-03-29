@@ -35,6 +35,7 @@ import {
   noteHistoryTool,
   restoreVersionTool,
   createExploreGraphTool,
+  findSimilarTool,
   createSuggestLinksTool,
 } from './tools/index.js';
 import type { BackupConfig } from '../backup/index.js';
@@ -201,6 +202,7 @@ export function createEchosAgent(deps: AgentDeps): Agent {
       search: deps.search,
       generateEmbedding: deps.generateEmbedding,
     }),
+    findSimilarTool(storageDeps),
     createSuggestLinksTool({
       sqlite: deps.sqlite,
       vectorDb: deps.vectorDb,

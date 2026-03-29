@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
+import { isValidCron } from '../cron.js';
 
 const commaSeparatedNumbers = z
   .string()
@@ -99,6 +100,18 @@ export const configSchema = z
     .string()
     .default('false')
     .transform((s) => s === 'true'),
+
+  // Backup
+  backupEnabled: z
+    .string()
+    .default('true')
+    .transform((s) => s === 'true'),
+  backupCron: z
+    .string()
+    .default('0 2 * * *')
+    .refine(isValidCron, { message: 'BACKUP_CRON must be a valid 5-field cron expression (e.g. "0 2 * * *")' }),
+  backupDir: z.string().default(join(ECHOS_HOME, 'backups')),
+  backupRetentionCount: z.coerce.number().int().positive().default(7),
 })
 .superRefine((data, ctx) => {
   // Note: we intentionally do NOT validate that the API key matches DEFAULT_MODEL's provider here.
@@ -159,6 +172,10 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     cacheRetention: env['CACHE_RETENTION'],
     logLlmPayloads: env['LOG_LLM_PAYLOADS'],
     disableUpdateCheck: env['DISABLE_UPDATE_CHECK'],
+    backupEnabled: env['BACKUP_ENABLED'],
+    backupCron: env['BACKUP_CRON'],
+    backupDir: env['BACKUP_DIR'] || join(echosHome, 'backups'),
+    backupRetentionCount: env['BACKUP_RETENTION_COUNT'],
   });
 
   if (!result.success) {

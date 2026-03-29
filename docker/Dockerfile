@@ -1,20 +1,10 @@
+# syntax=docker/dockerfile:1
 FROM node:20-alpine AS base
 # su-exec: lightweight setuid helper for dropping privileges in entrypoints
 # Upgrade corepack first — bundled version may have stale signing keys
 RUN apk add --no-cache su-exec && \
     npm i -g corepack && corepack enable && corepack prepare pnpm@10.30.1 --activate
 WORKDIR /app
-
-# Extract only plugin package.json files — isolates the cache key so that
-# plugin source changes don't invalidate the pnpm install layer below.
-FROM base AS plugin-manifests
-COPY plugins/ /tmp/all-plugins/
-RUN set -e; mkdir -p /manifests; \
-    for d in /tmp/all-plugins/*/; do \
-      name=$(basename "$d"); \
-      mkdir -p "/manifests/plugins/$name" && \
-      cp "$d/package.json" "/manifests/plugins/$name/"; \
-    done
 
 # Install dependencies
 FROM base AS deps
@@ -28,12 +18,12 @@ COPY packages/telegram/package.json packages/telegram/
 COPY packages/web/package.json packages/web/
 COPY packages/cli/package.json packages/cli/
 COPY packages/scheduler/package.json packages/scheduler/
-COPY --from=plugin-manifests /manifests/plugins/ plugins/
+COPY --parents plugins/*/package.json ./
 RUN pnpm install --frozen-lockfile --prod=false
 
 # Build
 FROM deps AS build
-COPY tsconfig.json ./
+COPY tsconfig.json tsconfig.paths.json ./
 COPY packages/ packages/
 COPY plugins/ plugins/
 RUN pnpm build

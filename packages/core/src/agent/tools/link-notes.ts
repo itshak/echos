@@ -34,7 +34,10 @@ export function linkNotesTool(deps: LinkNotesToolDeps): AgentTool<typeof schema>
 
       // Add target to source's links
       const sourceNote = deps.markdown.read(sourceRow.filePath);
-      if (sourceNote && !sourceNote.metadata.links.includes(params.target_id)) {
+      if (!sourceNote) {
+        throw new Error(`Markdown file not found for note "${sourceRow.id}" at path: ${sourceRow.filePath}`);
+      }
+      if (!sourceNote.metadata.links.includes(params.target_id)) {
         const updatedLinks = [...sourceNote.metadata.links, params.target_id];
         deps.markdown.update(sourceRow.filePath, { links: updatedLinks });
         deps.sqlite.upsertNote(
@@ -46,7 +49,10 @@ export function linkNotesTool(deps: LinkNotesToolDeps): AgentTool<typeof schema>
 
       // Add source to target's links
       const targetNote = deps.markdown.read(targetRow.filePath);
-      if (targetNote && !targetNote.metadata.links.includes(params.source_id)) {
+      if (!targetNote) {
+        throw new Error(`Markdown file not found for note "${targetRow.id}" at path: ${targetRow.filePath}`);
+      }
+      if (!targetNote.metadata.links.includes(params.source_id)) {
         const updatedLinks = [...targetNote.metadata.links, params.source_id];
         deps.markdown.update(targetRow.filePath, { links: updatedLinks });
         deps.sqlite.upsertNote(

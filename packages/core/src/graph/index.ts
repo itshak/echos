@@ -32,9 +32,9 @@ export interface TopologyStats {
 // ── Builder ───────────────────────────────────────────────────────────────────
 
 export function buildGraph(sqlite: SqliteStorage): KnowledgeGraph {
-  // No limit: load all notes. Only id/title/type/tags/links/category are used
+  // Load all notes — no pagination. Only id/title/type/tags/links/category are used
   // (content is part of NoteRow but we ignore it here).
-  const rows = sqlite.listNotes();
+  const rows = sqlite.listNotes({ limit: Number.MAX_SAFE_INTEGER });
 
   const nodeMap = new Map<string, GraphNode>();
   for (const row of rows) {

@@ -127,6 +127,14 @@ export async function createBackup(config: BackupConfig): Promise<BackupResult> 
       noteCount,
       timestamp: new Date().toISOString(),
     };
+  } catch (err) {
+    // Remove the partial archive so it is not mistaken for a valid backup
+    try {
+      await rm(backupPath, { force: true });
+    } catch {
+      // ignore cleanup errors
+    }
+    throw err;
   } finally {
     // Always clean up the staging directory
     try {
@@ -174,8 +182,23 @@ export function listBackups(backupDir: string): BackupInfo[] {
 /**
  * Restore a backup archive to a target directory.
  * Does NOT overwrite live data — the caller is responsible for swapping directories.
+ *
+ * Validates all archive entry paths before extracting to prevent path-traversal attacks.
  */
 export async function restoreBackup(backupPath: string, targetDir: string): Promise<void> {
+  // List entries first and reject any that escape targetDir
+  const { stdout } = await execFileAsync('tar', ['-tzf', backupPath]);
+  const absTarget = join(targetDir, '.'); // normalize
+  for (const entry of stdout.split('\n').filter(Boolean)) {
+    // Reject absolute paths and any path containing '..' segments
+    if (entry.startsWith('/') || entry.split('/').includes('..')) {
+      throw new Error(`Unsafe archive entry rejected: ${entry}`);
+    }
+    const resolved = join(absTarget, entry);
+    if (!resolved.startsWith(absTarget)) {
+      throw new Error(`Unsafe archive entry rejected: ${entry}`);
+    }
+  }
   await mkdir(targetDir, { recursive: true });
   await execFileAsync('tar', ['-xzf', backupPath, '-C', targetDir]);
 }

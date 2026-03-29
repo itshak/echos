@@ -87,6 +87,11 @@ export interface FeedStore {
    * Returns false if the guid was already claimed (duplicate).
    */
   claimEntry(entry: FeedEntry): boolean;
+  /**
+   * Removes a claimed entry by feedId and guid.
+   * Used to roll back a claim when post-processing fails.
+   */
+  removeEntry(feedId: string, guid: string): void;
   getEntryCount(feedId: string): number;
   close(): void;
 }
@@ -105,7 +110,7 @@ export function createFeedStore(dbPath: string): FeedStore {
       db.prepare(
         `INSERT INTO feeds (id, url, name, tags, last_checked_at, last_entry_date, created_at)
          VALUES (@id, @url, @name, @tags, @lastCheckedAt, @lastEntryDate, @createdAt)
-         ON CONFLICT(id) DO UPDATE SET
+         ON CONFLICT DO UPDATE SET
            url=excluded.url, name=excluded.name, tags=excluded.tags,
            last_checked_at=excluded.last_checked_at, last_entry_date=excluded.last_entry_date`,
       ).run({
@@ -165,6 +170,10 @@ export function createFeedStore(dbPath: string): FeedStore {
         createdAt: entry.createdAt,
       });
       return info.changes > 0;
+    },
+
+    removeEntry(feedId: string, guid: string): void {
+      db.prepare('DELETE FROM feed_entries WHERE feed_id = ? AND guid = ?').run(feedId, guid);
     },
 
     getEntryCount(feedId: string): number {

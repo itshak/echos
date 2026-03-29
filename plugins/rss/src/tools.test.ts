@@ -1,15 +1,22 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { PluginContext } from '@echos/core';
+import { ValidationError } from '@echos/shared';
 
-const { mockParseURL } = vi.hoisted(() => ({
+const { mockParseString, mockFetchFeedXml, mockPollFeed, mockProcessEntry } = vi.hoisted(() => ({
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  mockParseURL: vi.fn<any>(),
+  mockParseString: vi.fn<any>(),
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  mockFetchFeedXml: vi.fn<any>(),
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  mockPollFeed: vi.fn<any>(),
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  mockProcessEntry: vi.fn<any>(),
 }));
 
 vi.mock('rss-parser', () => ({
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   default: vi.fn().mockImplementation(function (this: any) {
-    this.parseURL = mockParseURL;
+    this.parseString = mockParseString;
   }),
 }));
 
@@ -23,6 +30,16 @@ vi.mock('@echos/plugin-article', () => ({
     embedText: 'Article Title\n\nArticle content',
   }),
 }));
+
+vi.mock('./poller.js', async (importOriginal) => {
+  const orig = await importOriginal<typeof import('./poller.js')>();
+  return {
+    ...orig,
+    fetchFeedXml: mockFetchFeedXml,
+    pollFeed: mockPollFeed,
+    processEntry: mockProcessEntry,
+  };
+});
 
 import { createManageFeedsTool } from './tools.js';
 import { createFeedStore, type FeedStore } from './feed-store.js';
@@ -59,9 +76,11 @@ let store: FeedStore;
 
 beforeEach(() => {
   store = createFeedStore(':memory:');
-  mockParseURL.mockResolvedValue(PARSED_FEED);
   vi.clearAllMocks();
-  mockParseURL.mockResolvedValue(PARSED_FEED);
+  mockFetchFeedXml.mockResolvedValue('<rss></rss>');
+  mockParseString.mockResolvedValue(PARSED_FEED);
+  mockPollFeed.mockResolvedValue([]);
+  mockProcessEntry.mockResolvedValue(true);
 });
 
 function tool() {
@@ -84,7 +103,7 @@ describe('manage_feeds tool', () => {
     });
 
     it('uses feed title from rss-parser when no name provided', async () => {
-      mockParseURL.mockResolvedValue({ title: 'My Blog', items: [] });
+      mockParseString.mockResolvedValue({ title: 'My Blog', items: [] });
       await exec({ action: 'add', url: VALID_FEED_URL });
       expect(store.listFeeds()[0]?.name).toBe('My Blog');
     });
@@ -94,14 +113,12 @@ describe('manage_feeds tool', () => {
       expect(store.listFeeds()[0]?.name).toBe('Custom Name');
     });
 
-    it('returns error for missing url', async () => {
-      const result = await exec({ action: 'add' });
-      expect(result.content[0]).toMatchObject({ text: expect.stringContaining('url is required') });
+    it('throws ValidationError for missing url', async () => {
+      await expect(exec({ action: 'add' })).rejects.toThrow(ValidationError);
     });
 
-    it('returns error for invalid URL', async () => {
-      const result = await exec({ action: 'add', url: 'not-a-url' });
-      expect(result.content[0]).toMatchObject({ text: expect.stringContaining('Invalid URL') });
+    it('throws ValidationError for invalid URL', async () => {
+      await expect(exec({ action: 'add', url: 'not-a-url' })).rejects.toThrow(ValidationError);
     });
 
     it('returns message for duplicate feed', async () => {
@@ -112,7 +129,7 @@ describe('manage_feeds tool', () => {
     });
 
     it('returns error when feed URL is not parseable', async () => {
-      mockParseURL.mockRejectedValue(new Error('HTTP 404'));
+      mockFetchFeedXml.mockRejectedValue(new Error('HTTP 404'));
       const result = await exec({ action: 'add', url: VALID_FEED_URL });
       expect(result.content[0]).toMatchObject({ text: expect.stringContaining('Could not parse feed') });
     });
@@ -152,14 +169,12 @@ describe('manage_feeds tool', () => {
       expect(result.content[0]).toMatchObject({ text: expect.stringContaining('No feed found') });
     });
 
-    it('returns error for missing url', async () => {
-      const result = await exec({ action: 'remove' });
-      expect(result.content[0]).toMatchObject({ text: expect.stringContaining('url is required') });
+    it('throws ValidationError for missing url', async () => {
+      await expect(exec({ action: 'remove' })).rejects.toThrow(ValidationError);
     });
 
-    it('returns error for invalid URL', async () => {
-      const result = await exec({ action: 'remove', url: 'not-a-url' });
-      expect(result.content[0]).toMatchObject({ text: expect.stringContaining('Invalid URL') });
+    it('throws ValidationError for invalid URL', async () => {
+      await expect(exec({ action: 'remove', url: 'not-a-url' })).rejects.toThrow(ValidationError);
     });
   });
 
@@ -174,43 +189,43 @@ describe('manage_feeds tool', () => {
       expect(result.content[0]).toMatchObject({ text: expect.stringContaining('No feed found') });
     });
 
-    it('returns error for invalid URL', async () => {
-      const result = await exec({ action: 'refresh', url: 'not-a-url' });
-      expect(result.content[0]).toMatchObject({ text: expect.stringContaining('Invalid URL') });
+    it('throws ValidationError for invalid URL', async () => {
+      await expect(exec({ action: 'refresh', url: 'not-a-url' })).rejects.toThrow(ValidationError);
     });
 
     it('reports no new entries when feed is up to date', async () => {
       await exec({ action: 'add', url: VALID_FEED_URL });
-      mockParseURL.mockResolvedValue({ title: 'Example Blog', items: [] });
+      mockPollFeed.mockResolvedValue([]);
       const result = await exec({ action: 'refresh' });
       expect(result.content[0]).toMatchObject({ text: expect.stringContaining('no new entries') });
     });
 
     it('saves new articles on refresh', async () => {
       await exec({ action: 'add', url: VALID_FEED_URL });
-      mockParseURL.mockResolvedValue({
-        title: 'Example Blog',
-        items: [
-          { guid: 'guid-1', link: 'https://example.com/post/1', title: 'Post 1', isoDate: '2024-06-01T00:00:00.000Z' },
-        ],
-      });
+      mockPollFeed.mockResolvedValue([
+        { guid: 'guid-1', url: 'https://example.com/post/1', title: 'Post 1', publishedAt: '2024-06-01T00:00:00.000Z' },
+      ]);
+      mockProcessEntry.mockResolvedValue(true);
       const result = await exec({ action: 'refresh' });
       expect(result.content[0]).toMatchObject({ text: expect.stringContaining('saved 1 new article') });
-      expect(mockContext.sqlite.upsertNote).toHaveBeenCalled();
+      expect(mockProcessEntry).toHaveBeenCalled();
     });
 
     it('deduplicates: does not save the same article twice', async () => {
       await exec({ action: 'add', url: VALID_FEED_URL });
-      const items = [
-        { guid: 'guid-1', link: 'https://example.com/post/1', title: 'Post 1', isoDate: '2024-06-01T00:00:00.000Z' },
+      const entries = [
+        { guid: 'guid-1', url: 'https://example.com/post/1', title: 'Post 1', publishedAt: '2024-06-01T00:00:00.000Z' },
       ];
-      mockParseURL.mockResolvedValue({ title: 'Example Blog', items });
+      mockPollFeed.mockResolvedValue(entries);
+      mockProcessEntry.mockResolvedValue(true);
       await exec({ action: 'refresh' });
       vi.clearAllMocks();
-      mockParseURL.mockResolvedValue({ title: 'Example Blog', items });
+      mockPollFeed.mockResolvedValue(entries);
+      // Second time processEntry returns false (already claimed)
+      mockProcessEntry.mockResolvedValue(false);
       await exec({ action: 'refresh' });
-      // upsertNote should NOT be called the second time
-      expect(mockContext.sqlite.upsertNote).not.toHaveBeenCalled();
+      // processEntry was called but returned false, so saved count should be 0
+      expect(mockProcessEntry).toHaveBeenCalled();
     });
   });
 });

@@ -2,15 +2,12 @@ import { Type, type Static } from '@mariozechner/pi-ai';
 import type { AgentTool, AgentToolResult } from '@mariozechner/pi-agent-core';
 import { v4 as uuidv4 } from 'uuid';
 import type { PluginContext } from '@echos/core';
-import { validateUrl } from '@echos/shared';
+import { validateUrl, ValidationError } from '@echos/shared';
 import RSSParser from 'rss-parser';
 import type { FeedStore } from './feed-store.js';
-import { pollFeed, processEntry } from './poller.js';
+import { pollFeed, processEntry, fetchFeedXml } from './poller.js';
 
-const parser = new RSSParser({
-  timeout: 30000,
-  headers: { 'User-Agent': 'EchOS/1.0 (RSS Feed Reader)' },
-});
+const parser = new RSSParser();
 
 const schema = Type.Object({
   action: Type.Union(
@@ -85,15 +82,10 @@ async function handleAdd(
   store: FeedStore,
 ): Promise<AgentToolResult<unknown>> {
   if (!params.url) {
-    return err('Error: url is required for add action');
+    throw new ValidationError('url is required for add action');
   }
 
-  let validatedUrl: string;
-  try {
-    validatedUrl = validateUrl(params.url);
-  } catch {
-    return err(`Error: Invalid URL: ${params.url}`);
-  }
+  const validatedUrl = validateUrl(params.url);
 
   // Check for duplicate
   const existing = store.getFeedByUrl(validatedUrl);
@@ -101,10 +93,11 @@ async function handleAdd(
     return ok(`Feed already subscribed: "${existing.name}" (${validatedUrl})`);
   }
 
-  // Parse feed to validate and get title
+  // Parse feed to validate and get title (with size-limited fetch)
   let feedTitle: string;
   try {
-    const parsed = await parser.parseURL(validatedUrl);
+    const xml = await fetchFeedXml(validatedUrl);
+    const parsed = await parser.parseString(xml);
     feedTitle = parsed.title ?? parsed.description ?? params.url;
   } catch (e) {
     return err(
@@ -157,15 +150,10 @@ function handleList(store: FeedStore): AgentToolResult<unknown> {
 
 function handleRemove(params: Params, store: FeedStore): AgentToolResult<unknown> {
   if (!params.url) {
-    return err('Error: url is required for remove action');
+    throw new ValidationError('url is required for remove action');
   }
 
-  let normalizedUrl: string;
-  try {
-    normalizedUrl = validateUrl(params.url);
-  } catch {
-    return err(`Error: Invalid URL: ${params.url}`);
-  }
+  const normalizedUrl = validateUrl(params.url);
 
   const feed = store.getFeedByUrl(normalizedUrl);
   if (!feed) {
@@ -188,11 +176,7 @@ async function handleRefresh(
   const { logger } = context;
   let lookupUrl = params.url;
   if (lookupUrl) {
-    try {
-      lookupUrl = validateUrl(lookupUrl);
-    } catch {
-      return ok(`Error: Invalid URL: ${params.url}`);
-    }
+    lookupUrl = validateUrl(lookupUrl);
   }
 
   const allFeeds = lookupUrl

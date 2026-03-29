@@ -27,3 +27,5 @@ export { createManageTagsTool, type ManageTagsToolDeps } from './manage-tags.js'
 export { createReadingQueueTool, type ReadingQueueToolDeps } from './reading-queue.js';
 export { createReadingStatsTool, type ReadingStatsToolDeps } from './reading-stats.js';
 export { createManageBackupsTool, type ManageBackupsToolDeps } from './backup.js';
+export { noteHistoryTool, type NoteHistoryToolDeps } from './note-history.js';
+export { restoreVersionTool, type RestoreVersionToolDeps } from './restore-version.js';

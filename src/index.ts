@@ -35,6 +35,7 @@ import {
   createExportCleanupProcessor,
   createTrashPurgeProcessor,
   createBackupProcessor,
+  createUpdateCheckProcessor,
   createJobRouter,
   createManageScheduleTool,
   type QueueService,
@@ -327,6 +328,11 @@ async function main(): Promise<void> {
     retentionCount: config.backupRetentionCount,
     logger,
   });
+  const updateCheckProcessor = createUpdateCheckProcessor({
+    notificationService,
+    logger,
+    disableUpdateCheck: config.disableUpdateCheck,
+  });
 
   const scheduleManager = new ScheduleManager(
     queueService.queue,
@@ -347,6 +353,7 @@ async function main(): Promise<void> {
     exportCleanupProcessor,
     trashPurgeProcessor,
     backupProcessor,
+    updateCheckProcessor,
     logger,
   });
 

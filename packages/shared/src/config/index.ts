@@ -94,6 +94,12 @@ export const configSchema = z
     .default('false')
     .transform((s) => s === 'true'),
 
+  // Update checker
+  disableUpdateCheck: z
+    .string()
+    .default('false')
+    .transform((s) => s === 'true'),
+
   // Backup
   backupEnabled: z
     .string()
@@ -161,6 +167,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     thinkingLevel: env['THINKING_LEVEL'],
     cacheRetention: env['CACHE_RETENTION'],
     logLlmPayloads: env['LOG_LLM_PAYLOADS'],
+    disableUpdateCheck: env['DISABLE_UPDATE_CHECK'],
     backupEnabled: env['BACKUP_ENABLED'],
     backupCron: env['BACKUP_CRON'],
     backupDir: env['BACKUP_DIR'] || join(echosHome, 'backups'),

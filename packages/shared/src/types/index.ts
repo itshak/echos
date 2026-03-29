@@ -88,7 +88,7 @@ export interface ScheduleEntry {
  * Schedule IDs reserved for internal system use.
  * User-created schedules must not use these IDs.
  */
-export const RESERVED_SCHEDULE_IDS = new Set(['reminder-check', 'trash-purge', 'backup']);
+export const RESERVED_SCHEDULE_IDS = new Set(['reminder-check', 'trash-purge', 'backup', 'update-check']);
 
 export interface ProcessedContent {
   title: string;

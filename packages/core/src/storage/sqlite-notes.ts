@@ -1,6 +1,6 @@
 import type Database from 'better-sqlite3';
 import type { Logger } from 'pino';
-import type { ContentStatus, ContentType, NoteMetadata } from '@echos/shared';
+import type { ContentStatus, NoteMetadata } from '@echos/shared';
 import { ValidationError } from '@echos/shared';
 import type { PreparedStatements } from './sqlite-schema.js';
 import type { NoteRow, ListNotesOptions, FtsOptions } from './sqlite.js';

@@ -48,9 +48,14 @@ export function createJobRouter(deps: ProcessorDeps) {
     }
 
     if (type === 'update_check' || type === 'update-check') {
-      if (deps.updateCheckProcessor) {
-        await deps.updateCheckProcessor(job);
+      if (!deps.updateCheckProcessor) {
+        deps.logger.warn(
+          { type, jobId: job.id },
+          'Received update_check job but no updateCheckProcessor is configured',
+        );
+        return;
       }
+      await deps.updateCheckProcessor(job);
       return;
     }
 

@@ -1,3 +1,7 @@
+import { accessSync, existsSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
 export type InstallMethod = 'homebrew' | 'git' | 'docker' | 'manual';
 
 /**
@@ -9,7 +13,6 @@ export function detectInstallMethod(): InstallMethod {
     return 'docker';
   }
   try {
-    const { accessSync } = require('node:fs') as typeof import('node:fs');
     accessSync('/.dockerenv');
     return 'docker';
   } catch {
@@ -24,9 +27,6 @@ export function detectInstallMethod(): InstallMethod {
 
   // Git: .git directory at project root (walk up like getVersion())
   try {
-    const { existsSync } = require('node:fs') as typeof import('node:fs');
-    const { dirname, join } = require('node:path') as typeof import('node:path');
-    const { fileURLToPath } = require('node:url') as typeof import('node:url');
     let dir = dirname(fileURLToPath(import.meta.url));
     for (let i = 0; i < 6; i++) {
       if (existsSync(join(dir, '.git'))) {
@@ -90,10 +90,9 @@ export async function fetchLatestRelease(
   owner: string,
   repo: string,
 ): Promise<{ version: string; url: string } | null> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 10_000);
   try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 10_000);
-
     const response = await fetch(
       `https://api.github.com/repos/${owner}/${repo}/releases/latest`,
       {
@@ -101,8 +100,6 @@ export async function fetchLatestRelease(
         signal: controller.signal,
       },
     );
-
-    clearTimeout(timeout);
 
     if (!response.ok) return null;
 
@@ -116,6 +113,8 @@ export async function fetchLatestRelease(
     };
   } catch {
     return null;
+  } finally {
+    clearTimeout(timeout);
   }
 }
 

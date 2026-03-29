@@ -58,7 +58,7 @@ export class ScheduleManager {
     );
     updatedIds.add('update-check');
 
-    // Remove schedulers that are no longer enabled/in DB (except hardcoded reminder check)
+    // Remove schedulers that are no longer enabled/in DB, keeping only those we just synced (including internal system schedulers)
     for (const id of existingIds) {
       if (!updatedIds.has(id)) {
         await this.removeSchedule(id);

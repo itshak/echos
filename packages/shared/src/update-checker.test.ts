@@ -4,7 +4,6 @@ import {
   getUpdateInstructions,
   fetchLatestRelease,
   formatUpdateNotification,
-  type InstallMethod,
 } from './update-checker.js';
 
 describe('compareSemver', () => {

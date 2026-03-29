@@ -6,6 +6,8 @@ WORKDIR /app
 
 # Install dependencies
 FROM base AS deps
+# Build tools for native modules (better-sqlite3) when prebuilds are unavailable
+RUN apk add --no-cache python3 make g++
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
 COPY packages/shared/package.json packages/shared/
 COPY packages/core/package.json packages/core/

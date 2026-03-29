@@ -2,7 +2,7 @@ FROM node:20-alpine AS base
 # su-exec: lightweight setuid helper for dropping privileges in entrypoints
 # Upgrade corepack first — bundled version may have stale signing keys
 RUN apk add --no-cache su-exec && \
-    npm i -g corepack && corepack enable && corepack prepare pnpm@10.30.1 --activate
+    npm i -g corepack@0.29.4 --no-audit --no-fund && corepack enable && corepack prepare pnpm@10.30.1 --activate
 WORKDIR /app
 
 # Install dependencies
@@ -59,7 +59,11 @@ COPY --from=deps /app/plugins/journal/package.json plugins/journal/
 COPY --from=deps /app/plugins/pdf/package.json plugins/pdf/
 COPY --from=deps /app/plugins/audio/package.json plugins/audio/
 COPY --from=deps /app/plugins/rss/package.json plugins/rss/
-RUN pnpm install --prod --frozen-lockfile
+# Install build tools, run prod install, then remove tools — all in one layer
+# to avoid bloating the final image with ~150MB of compiler toolchain
+RUN apk add --no-cache --virtual .build-deps python3 make g++ && \
+    pnpm install --prod --frozen-lockfile && \
+    apk del .build-deps
 
 # Copy build artifacts (changes frequently, so last)
 COPY --from=build /app/packages ./packages/

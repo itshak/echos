@@ -6,6 +6,7 @@ import type { VectorStorage } from '../../storage/vectordb.js';
 import type { Logger } from 'pino';
 import { categorizeContent, type ProcessingMode, DEFAULT_CATEGORIZATION_MODEL } from '../categorization.js';
 import { resolveModel } from '../model-resolver.js';
+import { suggestLinks } from '../../graph/auto-linker.js';
 
 export interface CategorizeNoteToolDeps {
   sqlite: SqliteStorage;
@@ -106,14 +107,15 @@ export function createCategorizeNoteTool(deps: CategorizeNoteToolDeps): AgentToo
 
         deps.sqlite.upsertNote(metadata, noteRow.content, savedFilePath);
 
-        // Update vector store
+        // Update vector store — keep the vector for reuse in link suggestions below
+        let noteVector: number[] | undefined;
         try {
           const embedText = `${noteRow.title}\n\n${noteRow.content}`;
-          const vector = await deps.generateEmbedding(embedText);
+          noteVector = await deps.generateEmbedding(embedText);
           await deps.vectorDb.upsert({
             id: params.noteId,
             text: embedText,
-            vector,
+            vector: noteVector,
             type: noteRow.type,
             title: noteRow.title,
           });
@@ -129,6 +131,28 @@ export function createCategorizeNoteTool(deps: CategorizeNoteToolDeps): AgentToo
           responseText += `\nGist: ${result.gist}`;
           responseText += `\nSummary: ${result.summary}`;
           responseText += `\nKey Points:\n${result.keyPoints.map((p) => `  - ${p}`).join('\n')}`;
+        }
+
+        // Auto-suggest links after categorization (non-fatal if it fails)
+        try {
+          const linkSuggestions = await suggestLinks(
+            params.noteId,
+            deps.sqlite,
+            deps.vectorDb,
+            deps.generateEmbedding,
+            3,
+            undefined,
+            noteVector,
+          );
+          if (linkSuggestions.length > 0) {
+            responseText += '\n\n**Link Suggestions:**';
+            for (const s of linkSuggestions) {
+              responseText += `\n- **${s.targetTitle}** (id: \`${s.targetId}\`) — ${(s.similarity * 100).toFixed(1)}% similar, ${s.reason}`;
+            }
+            responseText += '\nUse `link_notes` to connect any of these.';
+          }
+        } catch {
+          // Non-fatal: link suggestions are best-effort
         }
 
         return {

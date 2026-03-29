@@ -212,6 +212,10 @@ Three canonical workflows are defined as skills. Follow them exactly when trigge
 - **Creating a branch before a PR** → follow `.claude/skills/create-branch/SKILL.md`
 - **Reviewing and resolving PR comments** → follow `.claude/skills/review-pr-comments/SKILL.md`
 
+## implement-task: Always Open a PR
+
+When the `implement-task` skill runs (triggered by "implement task X.XX"), **always open a pull request at the end** — no confirmation needed. This overrides the default "don't create PRs unless asked" behaviour. The PR should follow the format defined in Step 11 of the skill.
+
 ## Git — Non-interactive Commands
 
 Never let git open an interactive editor (vim, nano, etc.). Always use environment variables or flags to keep git fully non-interactive:

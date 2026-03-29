@@ -3,7 +3,7 @@ import { Type, type Static } from '@mariozechner/pi-ai';
 import type { AgentTool } from '@mariozechner/pi-agent-core';
 import { v4 as uuidv4 } from 'uuid';
 import type { NoteMetadata } from '@echos/shared';
-import { validateUrl, validateBufferSize } from '@echos/shared';
+import { validateUrl, validateBufferSize, CONTENT_SIZE_DEFAULTS } from '@echos/shared';
 import type { PluginContext } from '@echos/core';
 import { categorizeContent, type ProcessingMode } from '@echos/core';
 
@@ -58,7 +58,10 @@ export function createSavePdfTool(context: PluginContext): AgentTool<typeof sche
       // Download the PDF
       let pdfBuffer: Buffer;
       try {
-        const response = await fetch(safeUrl);
+        const response = await fetch(safeUrl, {
+          signal: AbortSignal.timeout(30_000),
+          redirect: 'error',
+        });
         if (!response.ok) {
           throw new Error(`HTTP ${response.status}: ${response.statusText}`);
         }
@@ -70,6 +73,17 @@ export function createSavePdfTool(context: PluginContext): AgentTool<typeof sche
           !contentType.includes('binary/')
         ) {
           context.logger.warn({ contentType }, 'Unexpected content-type for PDF download');
+        }
+        // Reject early based on declared size to avoid buffering a huge response
+        const contentLength = response.headers.get('content-length');
+        if (contentLength !== null) {
+          const bytes = parseInt(contentLength, 10);
+          if (!isNaN(bytes) && bytes > CONTENT_SIZE_DEFAULTS.maxBytes) {
+            return {
+              content: [{ type: 'text' as const, text: `PDF is too large to process: reported size ${bytes.toLocaleString()} bytes exceeds ${CONTENT_SIZE_DEFAULTS.maxBytes.toLocaleString()} byte limit` }],
+              details: { error: 'too_large' },
+            };
+          }
         }
         const arrayBuffer = await response.arrayBuffer();
         pdfBuffer = Buffer.from(arrayBuffer);
@@ -141,7 +155,9 @@ export function createSavePdfTool(context: PluginContext): AgentTool<typeof sche
       }
 
       // Derive title: prefer explicit param, then PDF metadata, then URL filename
-      const urlFilename = safeUrl.split('/').pop()?.replace(/\.pdf$/i, '') ?? 'PDF Document';
+      const urlFilename =
+        decodeURIComponent(new URL(safeUrl).pathname.split('/').pop() ?? '').replace(/\.pdf$/i, '') ||
+        'PDF Document';
       const pdfTitle =
         typeof pdfData.info['Title'] === 'string' && pdfData.info['Title'].trim().length > 0
           ? pdfData.info['Title'].trim()

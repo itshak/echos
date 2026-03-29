@@ -108,9 +108,12 @@ export async function createVectorStorage(
         .filter((row) => !excludeSet.has(row['id'] as string))
         .slice(0, limit)
         .map((row) => {
-          const distance = (row['_distance'] as number) ?? 0;
+          const rawDistance = row['_distance'];
           // Convert distance to similarity percentage (0-100%)
-          const similarity = Math.round((1 / (1 + distance)) * 100 * 100) / 100;
+          const similarity =
+            typeof rawDistance === 'number'
+              ? Math.round((1 / (1 + rawDistance)) * 100 * 100) / 100
+              : 0;
           return {
             id: row['id'] as string,
             text: row['text'] as string,

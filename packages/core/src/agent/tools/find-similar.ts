@@ -1,6 +1,6 @@
 import { Type, StringEnum, type Static } from '@mariozechner/pi-ai';
 import type { AgentTool } from '@mariozechner/pi-agent-core';
-import type { ContentType } from '@echos/shared';
+import { NotFoundError, type ContentType } from '@echos/shared';
 import type { SqliteStorage } from '../../storage/sqlite.js';
 import type { VectorStorage } from '../../storage/vectordb.js';
 
@@ -46,7 +46,7 @@ export function findSimilarTool(deps: FindSimilarToolDeps): AgentTool<typeof sch
       // Get the reference note
       const row = deps.sqlite.getNote(params.noteId);
       if (!row) {
-        throw new Error(`Note not found: ${params.noteId}`);
+        throw new NotFoundError('note', params.noteId);
       }
 
       // Generate embedding from the note's content

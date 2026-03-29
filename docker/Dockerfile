@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 FROM node:20-alpine AS base
 # su-exec: lightweight setuid helper for dropping privileges in entrypoints
 # Upgrade corepack first — bundled version may have stale signing keys
@@ -17,8 +18,7 @@ COPY packages/telegram/package.json packages/telegram/
 COPY packages/web/package.json packages/web/
 COPY packages/cli/package.json packages/cli/
 COPY packages/scheduler/package.json packages/scheduler/
-COPY plugins/ /tmp/all-plugins/
-RUN for d in /tmp/all-plugins/*/; do name=$(basename "$d"); mkdir -p "plugins/$name" && cp "$d/package.json" "plugins/$name/"; done && rm -rf /tmp/all-plugins
+COPY --parents plugins/*/package.json ./
 RUN pnpm install --frozen-lockfile --prod=false
 
 # Build
@@ -39,8 +39,7 @@ COPY --from=deps /app/packages/telegram/package.json packages/telegram/
 COPY --from=deps /app/packages/web/package.json packages/web/
 COPY --from=deps /app/packages/cli/package.json packages/cli/
 COPY --from=deps /app/packages/scheduler/package.json packages/scheduler/
-COPY --from=deps /app/plugins/ /tmp/all-plugins/
-RUN for d in /tmp/all-plugins/*/; do name=$(basename "$d"); mkdir -p "plugins/$name" && cp "$d/package.json" "plugins/$name/"; done && rm -rf /tmp/all-plugins
+COPY --from=deps /app/plugins/ plugins/
 RUN pnpm install --prod --frozen-lockfile
 
 # Copy build artifacts (changes frequently, so last)

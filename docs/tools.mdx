@@ -206,7 +206,7 @@ Which notes aren't linked to anything?
 
 **Tool:** `categorize_note`
 
-Ask the agent to automatically categorize an existing note using AI — assigns a category and tags, and in `full` mode also generates a summary, key points, and a one-line gist.
+Ask the agent to automatically categorize an existing note using AI — assigns a category and tags, and in `full` mode also generates a summary, key points, and a one-line gist. After categorization, the tool automatically runs `suggest_links` and includes the top 3 link suggestions in the response.
 
 ```
 Categorize note abc-123.
@@ -215,6 +215,22 @@ Run full processing on note xyz-456.
 ```
 
 Modes: `lightweight` (category + tags only) and `full` (category + tags + summary + gist + key points).
+
+---
+
+#### Suggest links between notes
+
+**Tool:** `suggest_links`
+
+Find semantically similar notes that could be linked to a given note. Uses vector similarity to surface related content you may want to connect. Suggestions include a similarity score and a brief reason (shared tags, shared category, or semantic similarity). Use `link_notes` to accept any.
+
+```
+Suggest links for note abc-123.
+What notes are related to note xyz-456?
+Find me notes I should link to this one.
+```
+
+Parameters: `noteId` (required), `limit` (default 5, max 20). Excludes notes already linked and notes from the same source URL (split content).
 
 ---
 
@@ -682,6 +698,8 @@ Send me a weekly digest every Sunday.
 | *"Export this as a zip"* | `export_notes` |
 | *"Categorize note abc"* | `categorize_note` |
 | *"Link these two notes"* | `link_notes` |
+| *"Suggest links for note abc"* | `suggest_links` |
+| *"What notes are related to this one?"* | `suggest_links` |
 | *"What's connected to note abc / around this topic?"* | `explore_graph` (action=around) |
 | *"Export my knowledge graph"* | `explore_graph` (action=export) |
 | *"Show graph topology / hub notes / orphans"* | `explore_graph` (action=stats) |

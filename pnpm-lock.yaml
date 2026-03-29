@@ -477,6 +477,46 @@ importers:
         specifier: ^5.7.0
         version: 5.9.3
 
+  plugins/pdf:
+    dependencies:
+      '@echos/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@echos/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
+      '@mariozechner/pi-agent-core':
+        specifier: ^0.63.1
+        version: 0.63.1(ws@8.20.0)(zod@4.3.6)
+      '@mariozechner/pi-ai':
+        specifier: ^0.63.1
+        version: 0.63.1(ws@8.20.0)(zod@4.3.6)
+      '@sinclair/typebox':
+        specifier: ^0.34.49
+        version: 0.34.49
+      pdf-parse:
+        specifier: ^1.1.1
+        version: 1.1.4
+      pino:
+        specifier: ^10.3.1
+        version: 10.3.1
+      uuid:
+        specifier: ^13.0.0
+        version: 13.0.0
+    devDependencies:
+      '@types/node':
+        specifier: ^25.5.0
+        version: 25.5.0
+      '@types/pdf-parse':
+        specifier: ^1.1.4
+        version: 1.1.5
+      '@types/uuid':
+        specifier: ^11.0.0
+        version: 11.0.0
+      typescript:
+        specifier: ^5.7.0
+        version: 5.9.3
+
   plugins/resurface:
     dependencies:
       '@echos/core':
@@ -1923,6 +1963,9 @@ packages:
   '@types/node@25.5.0':
     resolution: {integrity: sha512-jp2P3tQMSxWugkCUKLRPVUpGaL5MVFwF8RDuSRztfwgN1wmqJeMSbKlnEtQqU8UrhTmzEmZdu2I6v2dpp7XIxw==}
 
+  '@types/pdf-parse@1.1.5':
+    resolution: {integrity: sha512-kBfrSXsloMnUJOKi25s3+hRmkycHfLK6A09eRGqF/N8BkQoPUmaCr+q8Cli5FnfohEz/rsv82zAiPz/LXtOGhA==}
+
   '@types/retry@0.12.0':
     resolution: {integrity: sha512-wWKOClTTiizcZhXnPY4wikVAwmdYHp8q6DmC+EJUzAMsycb7HB32Kh9RN4+0gExjmPmZSAQjgURXIGATPegAvA==}
 
@@ -2926,6 +2969,9 @@ packages:
     engines: {node: '>=10.5.0'}
     deprecated: Use your platform's native DOMException instead
 
+  node-ensure@0.0.0:
+    resolution: {integrity: sha512-DRI60hzo2oKN1ma0ckc6nQWlHU69RH6xN0sjQTjMpChPfTYvKZdcQFfdYK2RWbJcKyUizSIy/l8OTGxMAM1QDw==}
+
   node-fetch@2.7.0:
     resolution: {integrity: sha512-c4FRfUm/dbcWZ7U+1Wq0AwCyFL+3nt2bEw05wfxSz+DWpWsitgmSgYmy2dQdWyKC1694ELPqMs/YzUSNozLt8A==}
     engines: {node: 4.x || >=6.0.0}
@@ -3031,6 +3077,10 @@ packages:
 
   pathe@2.0.3:
     resolution: {integrity: sha512-WUjGcAqP1gQacoQe+OBJsFA7Ld4DyXuUIjZ5cc75cLHvJ7dtNsTugphxIADwspS+AraAUePCKrSVtPLFj/F88w==}
+
+  pdf-parse@1.1.4:
+    resolution: {integrity: sha512-XRIRcLgk6ZnUbsHsYXExMw+krrPE81hJ6FQPLdBNhhBefqIQKXu/WeTgNBGSwPrfU0v+UCEwn7AoAUOsVKHFvQ==}
+    engines: {node: '>=6.8.1'}
 
   picocolors@1.1.1:
     resolution: {integrity: sha512-xceH2snhtb5M9liqDsmEw56le376mTZkEX/jEb/RxNFyegNul7eNslCXP9FDj/Lcu0X8KEyMceP2ntpaHrDEVA==}
@@ -5016,6 +5066,10 @@ snapshots:
     dependencies:
       undici-types: 7.18.2
 
+  '@types/pdf-parse@1.1.5':
+    dependencies:
+      '@types/node': 25.5.0
+
   '@types/retry@0.12.0': {}
 
   '@types/tough-cookie@4.0.5': {}
@@ -6163,6 +6217,8 @@ snapshots:
 
   node-domexception@1.0.0: {}
 
+  node-ensure@0.0.0: {}
+
   node-fetch@2.7.0:
     dependencies:
       whatwg-url: 5.0.0
@@ -6260,6 +6316,10 @@ snapshots:
       minipass: 7.1.2
 
   pathe@2.0.3: {}
+
+  pdf-parse@1.1.4:
+    dependencies:
+      node-ensure: 0.0.0
 
   picocolors@1.1.1: {}
 

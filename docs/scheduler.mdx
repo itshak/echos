@@ -63,6 +63,17 @@ No configuration is required. Notes restored before the 30-day window are unaffe
 
 Processes long-form article and YouTube URLs queued by the agent during conversations. This runs automatically when URLs are submitted; no manual schedule creation is needed.
 
+### RSS Feed Poll (`rss_poll`)
+
+The RSS plugin polls all subscribed feeds for new articles and saves them as notes.
+
+- **Type**: `rss_poll`
+- **Default schedule**: Every 4 hours (`0 */4 * * *`) — auto-registered on first startup, no manual setup needed
+- **Config options**: none
+- **Behavior**: For each subscribed feed, fetches the RSS/Atom XML, filters entries newer than `lastEntryDate`, extracts full article text, applies AI categorization, and saves each new entry as a note. Deduplication is atomic — concurrent poll and refresh cannot create duplicate notes.
+
+Example: *"Change the RSS poll to run every 2 hours."* → updates the `rss-poll` schedule to cron `0 */2 * * *`.
+
 ### Knowledge Resurfacing (`resurface`)
 
 The Resurface Plugin surfaces forgotten notes from your knowledge base using spaced repetition and on-this-day discovery.
@@ -90,6 +101,7 @@ src/index.ts
               └── Job Router (Plugin-aware routing)
                    ├── digest       → DigestPlugin Processor
                    ├── resurface    → ResurfacePlugin Processor
+                   ├── rss_poll     → RSSPlugin Processor
                    ├── reminder     → Built-in Reminder Processor
                    ├── content      → Built-in Content Processor
                    └── trash_purge  → Built-in Trash Purge Processor

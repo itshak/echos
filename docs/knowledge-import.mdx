@@ -1,13 +1,13 @@
 ---
 title: "Knowledge Import"
-description: "Import Obsidian vaults, Notion exports, plain markdown files, PDFs, and audio."
+description: "Import Obsidian vaults, Notion exports, plain markdown files, PDFs, audio, and RSS feeds."
 ---
 
 # Knowledge Import Guide
 
 EchOS stores every note as a plain `.md` file with YAML frontmatter, making the knowledge base
 natively readable in any markdown editor and trivially importable from Obsidian vaults,
-Notion exports, PDFs, and audio files.
+Notion exports, PDFs, audio files, and RSS feeds.
 
 ---
 
@@ -22,6 +22,7 @@ The fastest way to import content is to ask the agent directly. EchOS includes p
 | Tweet / thread | `@echos/plugin-twitter` | *"Save this tweet: [URL]"* |
 | PDF document | `@echos/plugin-pdf` | *"Save this PDF: [URL]"* |
 | Podcast / audio | `@echos/plugin-audio` | *"Transcribe and save this podcast: [URL]"* |
+| RSS / Atom feed | `@echos/plugin-rss` | *"Subscribe to this RSS feed: [URL]"* |
 
 Each plugin downloads the content, extracts the relevant text (or transcript), and saves it as a searchable markdown note. AI categorization is applied automatically when `ANTHROPIC_API_KEY` is configured.
 
@@ -53,6 +54,33 @@ The agent calls `save_audio`, which:
 **Supported formats:** `.mp3`, `.wav`, `.m4a`, `.ogg`, `.webm`, `.mp4`, `.flac`
 
 **Requirement:** `OPENAI_API_KEY` must be configured. See [Setup](/setup-fixes) for details.
+
+### RSS and Atom feed subscriptions
+
+```
+Subscribe to this RSS feed: https://example.com/feed.xml
+```
+
+The agent calls `manage_feeds` (action: `add`), which:
+1. Validates the URL (SSRF protection)
+2. Fetches the feed to confirm it is parseable
+3. Stores the subscription in the plugin's SQLite database
+
+New articles are then fetched automatically every 4 hours. For each entry the plugin:
+1. Claims the article's guid atomically (deduplication)
+2. Extracts the full article text via `@echos/plugin-article`
+3. Applies AI categorization (inherits feed tags plus `rss`)
+4. Saves a note with `type: article` and `inputSource: url`
+
+**Manage subscriptions:**
+
+```
+List my RSS feeds
+Refresh all my RSS feeds now
+Unsubscribe from https://example.com/feed.xml
+```
+
+See [RSS Feed Plugin](/plugins#rss-feed-plugin) for full details.
 
 ---
 

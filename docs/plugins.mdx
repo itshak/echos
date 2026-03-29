@@ -379,6 +379,7 @@ See [Categorization](/categorization) for detailed documentation.
 | Journal | `@echos/plugin-journal` | Dedicated journaling, AI reflection, and daily prompts |
 | PDF | `@echos/plugin-pdf` | PDF text extraction via pdf-parse |
 | Audio | `@echos/plugin-audio` | Podcast/audio transcription via OpenAI Whisper |
+| RSS Feeds | `@echos/plugin-rss` | Automated RSS/Atom feed subscription and article ingestion |
 
 ### Twitter Plugin
 
@@ -654,3 +655,55 @@ The agent will create a `journal_prompt` schedule with cron `0 21 * * *`.
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
 | `prompt` | string | Built-in journaling nudge | Custom prompt text (max 1000 chars) |
+
+### RSS Feed Plugin
+
+The RSS plugin (`@echos/plugin-rss`) provides the `manage_feeds` tool for subscribing to RSS and Atom feeds, with automatic background polling every 4 hours.
+
+**Features:**
+- Subscribe to any RSS 2.0 or Atom feed via URL
+- Automatic deduplication — each article is saved at most once, even if a manual refresh and a scheduled poll run concurrently (atomic guid claim before processing)
+- Full article extraction via `@echos/plugin-article` (Readability) — not just the feed summary
+- AI categorization applied automatically when `ANTHROPIC_API_KEY` or `LLM_API_KEY` is configured
+- Per-feed tags: all articles from a feed inherit its configured tags plus the `rss` tag
+- Background polling every 4 hours via a self-registering BullMQ schedule (`rss-poll`)
+- Plugin-specific SQLite database at `{DB_PATH}/rss.db` — separate from `echos.db`
+
+**Tool: manage_feeds**
+
+```typescript
+{
+  action: 'add' | 'list' | 'remove' | 'refresh';
+  url?: string;    // Feed URL (required for add/remove/refresh of a specific feed)
+  name?: string;   // Display name (used with add; defaults to feed title)
+  tags?: string[]; // Tags applied to all articles from this feed (used with add)
+}
+```
+
+**Actions:**
+
+| Action | Description |
+|--------|-------------|
+| `add` | Subscribe to a feed. Validates the URL, fetches the feed to confirm it parses, then stores it. |
+| `list` | List all subscribed feeds with last-checked time and saved article count. |
+| `remove` | Unsubscribe from a feed. Previously saved articles are retained. |
+| `refresh` | Immediately fetch and save new articles. Omit `url` to refresh all feeds. |
+
+**Example prompts:**
+- *"Subscribe to this RSS feed: https://example.com/feed.xml, tag it as 'news'"*
+- *"List my RSS feed subscriptions"*
+- *"Unsubscribe from https://example.com/feed.xml"*
+- *"Refresh all my RSS feeds now"*
+
+**Automatic polling:**
+
+On first startup, the plugin registers a default schedule (`rss-poll`) with cron `0 */4 * * *` (every 4 hours). The schedule is stored in SQLite and picked up by the `ScheduleManager` — no manual setup required.
+
+To change the poll frequency, update the schedule via the agent:
+> *"Change the RSS poll schedule to run every 2 hours."*
+
+**Storage:**
+
+- Each feed entry is stored as a note with `type: article`, `inputSource: url`, and `sourceUrl` pointing to the original article
+- Feed-specific data (subscriptions, seen guids) lives in `{DB_PATH}/rss.db` and is managed entirely by the plugin
+- Deleting a feed subscription cascades to its entry records in `rss.db` — no orphan rows

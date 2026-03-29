@@ -35,6 +35,8 @@ export async function suggestLinks(
   generateEmbedding: (text: string) => Promise<number[]>,
   limit?: number,
   similarityThreshold?: number,
+  /** Pre-computed vector to skip redundant embedding generation. */
+  precomputedVector?: number[],
 ): Promise<LinkSuggestion[]> {
   const note = sqlite.getNote(noteId);
   if (!note) return [];
@@ -45,8 +47,7 @@ export async function suggestLinks(
   // Fetch extra candidates to allow filtering after deduplication / exclusions.
   const fetchLimit = maxResults * 4;
 
-  const embedText = `${note.title}\n\n${note.content}`;
-  const vector = await generateEmbedding(embedText);
+  const vector = precomputedVector ?? await generateEmbedding(`${note.title}\n\n${note.content}`);
 
   const results = await vectorStore.search(vector, fetchLimit);
 
@@ -76,7 +77,7 @@ export async function suggestLinks(
 
     suggestions.push({
       targetId: result.id,
-      targetTitle: result.title,
+      targetTitle: targetRow.title,
       similarity: result.score,
       reason: deriveReason(note, noteTags, targetRow),
     });

@@ -107,14 +107,15 @@ export function createCategorizeNoteTool(deps: CategorizeNoteToolDeps): AgentToo
 
         deps.sqlite.upsertNote(metadata, noteRow.content, savedFilePath);
 
-        // Update vector store
+        // Update vector store — keep the vector for reuse in link suggestions below
+        let noteVector: number[] | undefined;
         try {
           const embedText = `${noteRow.title}\n\n${noteRow.content}`;
-          const vector = await deps.generateEmbedding(embedText);
+          noteVector = await deps.generateEmbedding(embedText);
           await deps.vectorDb.upsert({
             id: params.noteId,
             text: embedText,
-            vector,
+            vector: noteVector,
             type: noteRow.type,
             title: noteRow.title,
           });
@@ -140,6 +141,8 @@ export function createCategorizeNoteTool(deps: CategorizeNoteToolDeps): AgentToo
             deps.vectorDb,
             deps.generateEmbedding,
             3,
+            undefined,
+            noteVector,
           );
           if (linkSuggestions.length > 0) {
             responseText += '\n\n**Link Suggestions:**';

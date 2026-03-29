@@ -202,6 +202,25 @@ Which notes aren't linked to anything?
 
 ---
 
+#### Find similar notes
+
+**Tool:** `find_similar`
+
+Given a note ID, finds the most semantically similar notes by comparing embedding vectors. Unlike `search_knowledge` (which takes a text query), this tool takes an existing note as the reference point and returns nearest neighbors ranked by similarity percentage.
+
+- Returns similarity as a percentage (0–100%)
+- Highlights shared tags and categories between the reference note and each result
+- Supports type filtering via `excludeType` to omit certain content types (e.g. reminders)
+- Excludes the reference note itself from results
+
+```
+Find notes similar to abc-123.
+What's related to this note? (note id: xyz-456)
+Show me notes like abc-123 but exclude reminders.
+```
+
+---
+
 #### Categorize a note
 
 **Tool:** `categorize_note`
@@ -685,6 +704,7 @@ Send me a weekly digest every Sunday.
 | *"What's connected to note abc / around this topic?"* | `explore_graph` (action=around) |
 | *"Export my knowledge graph"* | `explore_graph` (action=export) |
 | *"Show graph topology / hub notes / orphans"* | `explore_graph` (action=stats) |
+| *"Find notes similar to abc-123"* | `find_similar` |
 | *"Mark article as read"* | `mark_content` |
 | *"What should I read next?"* | `reading_queue` |
 | *"Show my reading list / queue"* | `reading_queue` |

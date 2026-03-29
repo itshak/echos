@@ -35,6 +35,7 @@ import {
   noteHistoryTool,
   restoreVersionTool,
   createExploreGraphTool,
+  findSimilarTool,
 } from './tools/index.js';
 import type { BackupConfig } from '../backup/index.js';
 import type { SqliteStorage } from '../storage/sqlite.js';
@@ -200,6 +201,7 @@ export function createEchosAgent(deps: AgentDeps): Agent {
       search: deps.search,
       generateEmbedding: deps.generateEmbedding,
     }),
+    findSimilarTool(storageDeps),
   ];
 
   const tools = [...coreTools, ...(deps.pluginTools ?? [])];

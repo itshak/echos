@@ -93,6 +93,12 @@ export const configSchema = z
     .string()
     .default('false')
     .transform((s) => s === 'true'),
+
+  // Update checker
+  disableUpdateCheck: z
+    .string()
+    .default('false')
+    .transform((s) => s === 'true'),
 })
 .superRefine((data, ctx) => {
   // Note: we intentionally do NOT validate that the API key matches DEFAULT_MODEL's provider here.
@@ -152,6 +158,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     thinkingLevel: env['THINKING_LEVEL'],
     cacheRetention: env['CACHE_RETENTION'],
     logLlmPayloads: env['LOG_LLM_PAYLOADS'],
+    disableUpdateCheck: env['DISABLE_UPDATE_CHECK'],
   });
 
   if (!result.success) {

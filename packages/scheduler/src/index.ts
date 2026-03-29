@@ -12,4 +12,5 @@ export { createContentProcessor, type ContentWorkerDeps } from './workers/conten
 export { createReminderCheckProcessor, type ReminderWorkerDeps } from './workers/reminder.js';
 export { createExportCleanupProcessor, type ExportCleanupDeps } from './workers/export-cleanup.js';
 export { createTrashPurgeProcessor, type TrashPurgeDeps } from './workers/trash-purge.js';
+export { createUpdateCheckProcessor, type UpdateCheckDeps } from './workers/update-check.js';
 export { createJobRouter, type ProcessorDeps } from './workers/processor.js';

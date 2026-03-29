@@ -9,6 +9,7 @@ export interface ProcessorDeps {
   reminderProcessor: (job: Job<JobData>) => Promise<void>;
   exportCleanupProcessor?: (job: Job<JobData>) => Promise<void>;
   trashPurgeProcessor?: (job: Job<JobData>) => Promise<void>;
+  updateCheckProcessor?: (job: Job<JobData>) => Promise<void>;
   logger: Logger;
 }
 
@@ -43,6 +44,18 @@ export function createJobRouter(deps: ProcessorDeps) {
         return;
       }
       await deps.trashPurgeProcessor(job);
+      return;
+    }
+
+    if (type === 'update_check' || type === 'update-check') {
+      if (!deps.updateCheckProcessor) {
+        deps.logger.warn(
+          { type, jobId: job.id },
+          'Received update_check job but no updateCheckProcessor is configured',
+        );
+        return;
+      }
+      await deps.updateCheckProcessor(job);
       return;
     }
 

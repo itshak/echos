@@ -50,7 +50,15 @@ export class ScheduleManager {
     );
     updatedIds.add('trash-purge');
 
-    // Remove schedulers that are no longer enabled/in DB (except hardcoded reminder check)
+    // Always schedule update check (runs daily at 10 AM)
+    await this.queue.upsertJobScheduler(
+      'update-check',
+      { pattern: '0 10 * * *' },
+      { name: 'update_check', data: { type: 'update_check' } },
+    );
+    updatedIds.add('update-check');
+
+    // Remove schedulers that are no longer enabled/in DB, keeping only those we just synced (including internal system schedulers)
     for (const id of existingIds) {
       if (!updatedIds.has(id)) {
         await this.removeSchedule(id);

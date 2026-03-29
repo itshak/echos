@@ -253,6 +253,23 @@ Parameters: `noteId` (required), `limit` (default 5, max 20). Excludes notes alr
 
 ---
 
+#### Synthesize notes
+
+**Tool:** `synthesize_notes`
+
+Combine multiple notes into a new synthesis note. Select source notes by IDs, a search query, or tags. Supports four output formats.
+
+```
+Synthesize my notes about TypeScript patterns into a summary.
+Create a comparison of my notes tagged "database".
+Give me an executive brief from notes abc-123, def-456, ghi-789.
+Create a timeline from my notes about the project launch.
+```
+
+Parameters: `title` (required), `noteIds` / `query` / `tags` (at least one), `format` (`summary` | `brief` | `comparison` | `timeline`, default `summary`), `maxNotes` (default 10, max 20). The synthesis note is auto-tagged with `synthesis` plus all source tags, and bidirectionally linked to every source note.
+
+---
+
 #### Mark content status
 
 **Tool:** `mark_content`
@@ -749,6 +766,9 @@ Send me a weekly digest every Sunday.
 | *"Show me available templates"* | `use_template` (action=list) |
 | *"Create a meeting note from template"* | `use_template` (action=use) |
 | *"Create a new template for X"* | `use_template` (action=create) |
+| *"Synthesize my notes about X"* | `synthesize_notes` |
+| *"Create a brief from these notes"* | `synthesize_notes` |
+| *"Compare my notes tagged Y"* | `synthesize_notes` |
 | *"Mark article as read"* | `mark_content` |
 | *"What should I read next?"* | `reading_queue` |
 | *"Show my reading list / queue"* | `reading_queue` |

@@ -38,6 +38,7 @@ import {
   findSimilarTool,
   createSuggestLinksTool,
   createUseTemplateTool,
+  createSynthesizeNotesTool,
 } from './tools/index.js';
 import type { BackupConfig } from '../backup/index.js';
 import type { SqliteStorage } from '../storage/sqlite.js';
@@ -215,6 +216,18 @@ export function createEchosAgent(deps: AgentDeps): Agent {
       vectorDb: deps.vectorDb,
       generateEmbedding: deps.generateEmbedding,
       knowledgeDir: deps.knowledgeDir ?? './data/knowledge',
+    }),
+    createSynthesizeNotesTool({
+      sqlite: deps.sqlite,
+      markdown: deps.markdown,
+      vectorDb: deps.vectorDb,
+      search: deps.search,
+      generateEmbedding: deps.generateEmbedding,
+      ...(deps.anthropicApiKey !== undefined ? { anthropicApiKey: deps.anthropicApiKey } : {}),
+      ...(deps.llmApiKey !== undefined ? { llmApiKey: deps.llmApiKey } : {}),
+      ...(deps.llmBaseUrl !== undefined ? { llmBaseUrl: deps.llmBaseUrl } : {}),
+      ...(deps.modelId !== undefined ? { modelId: deps.modelId } : {}),
+      logger: deps.logger,
     }),
   ];
 

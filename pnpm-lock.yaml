@@ -347,6 +347,43 @@ importers:
         specifier: ^5.7.0
         version: 5.9.3
 
+  plugins/audio:
+    dependencies:
+      '@echos/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@echos/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
+      '@mariozechner/pi-agent-core':
+        specifier: ^0.63.1
+        version: 0.63.1(ws@8.20.0)(zod@4.3.6)
+      '@mariozechner/pi-ai':
+        specifier: ^0.63.1
+        version: 0.63.1(ws@8.20.0)(zod@4.3.6)
+      '@sinclair/typebox':
+        specifier: ^0.34.49
+        version: 0.34.49
+      openai:
+        specifier: ^6.33.0
+        version: 6.33.0(ws@8.20.0)(zod@4.3.6)
+      pino:
+        specifier: ^10.3.1
+        version: 10.3.1
+      uuid:
+        specifier: ^13.0.0
+        version: 13.0.0
+    devDependencies:
+      '@types/node':
+        specifier: ^25.5.0
+        version: 25.5.0
+      '@types/uuid':
+        specifier: ^11.0.0
+        version: 11.0.0
+      typescript:
+        specifier: ^5.7.0
+        version: 5.9.3
+
   plugins/content-creation:
     dependencies:
       '@echos/core':

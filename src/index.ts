@@ -51,6 +51,7 @@ import twitterPlugin from '@echos/plugin-twitter';
 import resurfacePlugin from '@echos/plugin-resurface';
 import journalPlugin from '@echos/plugin-journal';
 import pdfPlugin from '@echos/plugin-pdf';
+import audioPlugin from '@echos/plugin-audio';
 
 const logger = createLogger('echos');
 
@@ -212,6 +213,7 @@ async function main(): Promise<void> {
   pluginRegistry.register(resurfacePlugin);
   pluginRegistry.register(journalPlugin);
   pluginRegistry.register(pdfPlugin);
+  pluginRegistry.register(audioPlugin);
 
   let agentDeps: AgentDeps;
   let notificationService: import('@echos/shared').NotificationService;

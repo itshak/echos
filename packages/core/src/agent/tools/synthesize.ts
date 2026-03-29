@@ -2,8 +2,8 @@ import { Type, StringEnum, type Static } from '@mariozechner/pi-ai';
 import type { AgentTool } from '@mariozechner/pi-agent-core';
 import { streamSimple } from '@mariozechner/pi-ai';
 import { v4 as uuidv4 } from 'uuid';
-import { NotFoundError } from '@echos/shared';
-import type { NoteMetadata, ContentType } from '@echos/shared';
+import { NotFoundError, ValidationError } from '@echos/shared';
+import type { NoteMetadata, ContentType, InputSource } from '@echos/shared';
 import type { Logger } from 'pino';
 import type { SqliteStorage } from '../../storage/sqlite.js';
 import type { MarkdownStorage } from '../../storage/markdown.js';
@@ -117,6 +117,23 @@ export function createSynthesizeNotesTool(
       const format: SynthesisFormat = params.format ?? 'summary';
       const maxNotes = Math.min(params.maxNotes ?? DEFAULT_MAX_NOTES, MAX_NOTES);
 
+      // --- Validate exactly one selector is provided ---
+      const hasNoteIds = params.noteIds && params.noteIds.length > 0;
+      const hasQuery = !!params.query;
+      const hasTags = params.tags && params.tags.length > 0;
+      const selectorCount = [hasNoteIds, hasQuery, hasTags].filter(Boolean).length;
+
+      if (selectorCount === 0) {
+        throw new ValidationError(
+          'At least one selector must be provided: noteIds, query, or tags.',
+        );
+      }
+      if (selectorCount > 1) {
+        throw new ValidationError(
+          'Only one selector may be provided at a time: noteIds, query, or tags.',
+        );
+      }
+
       // --- Resolve source notes ---
       const sourceNotes: Array<{
         id: string;
@@ -126,24 +143,48 @@ export function createSynthesizeNotesTool(
         created: string;
       }> = [];
 
-      if (params.noteIds && params.noteIds.length > 0) {
-        for (const id of params.noteIds.slice(0, maxNotes)) {
+      if (hasNoteIds) {
+        // Deduplicate noteIds while preserving order
+        const uniqueIds = [...new Set(params.noteIds!)].slice(0, maxNotes);
+        for (const id of uniqueIds) {
           const row = deps.sqlite.getNote(id);
           if (!row) {
             throw new NotFoundError('note', id);
           }
+
+          // Prefer markdown file as source of truth when available, fall back to SQLite.
+          let title = row.title;
+          let content = row.content;
+          let tags = row.tags ? row.tags.split(',').filter(Boolean) : [];
+
+          if (row.filePath) {
+            try {
+              const markdownNote = deps.markdown.read(row.filePath);
+              if (markdownNote) {
+                title = markdownNote.metadata.title;
+                content = markdownNote.content;
+                tags = markdownNote.metadata.tags ?? tags;
+              }
+            } catch (err: unknown) {
+              deps.logger.warn(
+                { err, noteId: id, filePath: row.filePath },
+                'Failed to read markdown for note; falling back to SQLite content',
+              );
+            }
+          }
+
           sourceNotes.push({
             id: row.id,
-            title: row.title,
-            content: truncateContent(row.content, MAX_CONTENT_PER_NOTE),
-            tags: row.tags ? row.tags.split(',').filter(Boolean) : [],
+            title,
+            content: truncateContent(content, MAX_CONTENT_PER_NOTE),
+            tags,
             created: row.created,
           });
         }
-      } else if (params.query) {
-        const vector = await deps.generateEmbedding(params.query);
+      } else if (hasQuery) {
+        const vector = await deps.generateEmbedding(params.query!);
         const results = await deps.search.hybrid({
-          query: params.query,
+          query: params.query!,
           vector,
           limit: maxNotes,
         });
@@ -156,8 +197,8 @@ export function createSynthesizeNotesTool(
             created: r.note.metadata.created,
           });
         }
-      } else if (params.tags && params.tags.length > 0) {
-        const rows = deps.sqlite.listNotes({ tags: params.tags, limit: maxNotes });
+      } else if (hasTags) {
+        const rows = deps.sqlite.listNotes({ tags: params.tags!, limit: maxNotes });
         for (const row of rows) {
           sourceNotes.push({
             id: row.id,
@@ -191,16 +232,35 @@ export function createSynthesizeNotesTool(
       const prompt = buildSynthesisPrompt(sourceNotes, format, params.title);
 
       let synthesisContent = '';
-      const stream = streamSimple(
-        model,
-        { messages: [{ role: 'user', content: prompt, timestamp: Date.now() }] },
-        { apiKey, maxTokens: 4000 },
-      );
+      try {
+        const stream = streamSimple(
+          model,
+          { messages: [{ role: 'user', content: prompt, timestamp: Date.now() }] },
+          { apiKey, maxTokens: 4000 },
+        );
 
-      for await (const event of stream) {
-        if (event.type === 'text_delta') {
-          synthesisContent += event.delta;
+        for await (const event of stream) {
+          if (event.type === 'text_delta') {
+            synthesisContent += event.delta;
+          }
         }
+      } catch (error: unknown) {
+        deps.logger.error(
+          { err: error, tool: 'synthesize_notes', model },
+          'LLM streaming failed in synthesize_notes tool',
+        );
+
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text:
+                'Failed to generate a synthesis due to an error communicating with the language model. ' +
+                'Please check your LLM configuration (API key, network, and provider status) and try again.',
+            },
+          ],
+          details: { error: 'llm_stream_error' },
+        };
       }
 
       synthesisContent = synthesisContent.trim();
@@ -263,18 +323,54 @@ export function createSynthesizeNotesTool(
         // Embedding failure is non-fatal
       }
 
-      // Link source notes back to the synthesis
+      // Link source notes back to the synthesis (bidirectional)
       for (const sourceId of sourceIds) {
         const row = deps.sqlite.getNote(sourceId);
         if (!row) continue;
+
+        if (!row.filePath) {
+          deps.logger.warn(
+            { sourceId, synthesisId: id },
+            'Source note has no markdown file; backlink could not be written',
+          );
+          // Still update the links array in SQLite so the relationship is at least recorded
+          const existingLinks = row.links ? row.links.split(',').filter(Boolean) : [];
+          if (!existingLinks.includes(id)) {
+            deps.sqlite.upsertNote(
+              {
+                id: row.id,
+                type: row.type as ContentType,
+                title: row.title,
+                created: row.created,
+                updated: new Date().toISOString(),
+                tags: row.tags ? row.tags.split(',').filter(Boolean) : [],
+                links: [...existingLinks, id],
+                category: row.category ?? 'uncategorized',
+                status: row.status ?? 'read',
+                inputSource: (row.inputSource as InputSource | undefined) ?? 'text',
+              },
+              row.content,
+              row.filePath,
+            );
+          }
+          continue;
+        }
+
         const note = deps.markdown.read(row.filePath);
-        if (!note) continue;
+        if (!note) {
+          deps.logger.warn(
+            { sourceId, filePath: row.filePath, synthesisId: id },
+            'Source note markdown file missing; backlink could not be written',
+          );
+          continue;
+        }
+
         if (!note.metadata.links.includes(id)) {
           const updatedLinks = [...note.metadata.links, id];
-          deps.markdown.update(row.filePath, { links: updatedLinks });
+          const updatedNote = deps.markdown.update(row.filePath, { links: updatedLinks });
           deps.sqlite.upsertNote(
-            { ...note.metadata, links: updatedLinks },
-            note.content,
+            updatedNote.metadata,
+            updatedNote.content,
             row.filePath,
           );
         }

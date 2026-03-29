@@ -15,6 +15,7 @@ import {
   WHISPER_MAX_BYTES,
   downloadInChunks,
   downloadFull,
+  probeContentLength,
   type AudioChunk,
 } from './chunker.js';
 
@@ -117,7 +118,15 @@ export function createSaveAudioTool(context: PluginContext): AgentTool<typeof sc
 
       // Determine filename and audio format from the URL
       const urlPath = new URL(safeUrl).pathname;
-      const urlFilename = decodeURIComponent(urlPath.split('/').pop() ?? '') || 'audio';
+      const urlFilenameRaw = urlPath.split('/').pop() ?? '';
+      let urlFilename: string;
+      try {
+        urlFilename = decodeURIComponent(urlFilenameRaw);
+      } catch {
+        // Malformed percent-encoding — fall back to the raw segment
+        urlFilename = urlFilenameRaw;
+      }
+      if (!urlFilename) urlFilename = 'audio';
       const mimeType = getAudioMime(urlFilename);
 
       if (mimeType === undefined) {
@@ -147,7 +156,9 @@ export function createSaveAudioTool(context: PluginContext): AgentTool<typeof sc
         details: { phase: 'probing' },
       });
 
-      // HEAD request to get file size without downloading
+      // Probe file size: HEAD first, then Range probe as fallback.
+      // Knowing the size up front lets us choose chunked vs. full download
+      // and avoids buffering a potentially huge file before rejecting it.
       let contentLength: number | undefined;
       try {
         const headResponse = await fetch(safeUrl, {
@@ -156,11 +167,17 @@ export function createSaveAudioTool(context: PluginContext): AgentTool<typeof sc
           redirect: 'error',
         });
         const cl = headResponse.headers.get('content-length');
-        if (cl !== null && !isNaN(parseInt(cl, 10))) {
+        if (cl !== null && Number.isFinite(parseInt(cl, 10))) {
           contentLength = parseInt(cl, 10);
         }
       } catch {
-        // HEAD failed — proceed without size info; will download fully
+        // HEAD failed — try range probe next
+      }
+
+      // If HEAD didn't reveal the size, probe via Range: bytes=0-0 to read
+      // the Content-Range total without downloading the body.
+      if (contentLength === undefined) {
+        contentLength = await probeContentLength(safeUrl);
       }
 
       const openai = new OpenAI({ apiKey: openaiApiKey as string });
@@ -242,18 +259,6 @@ export function createSaveAudioTool(context: PluginContext): AgentTool<typeof sc
         }
 
         fileSizeBytes = audioBuffer.length;
-
-        // Safety check: even if HEAD lied, refuse oversized single buffers
-        if (audioBuffer.length > WHISPER_MAX_BYTES) {
-          return {
-            content: [{
-              type: 'text' as const,
-              text: `Audio file is ${formatBytes(audioBuffer.length)}, which exceeds the Whisper 25 MB limit. ` +
-                    'Retry — the chunked download path will be used once the size is known.',
-            }],
-            details: { error: 'too_large', bytes: audioBuffer.length },
-          };
-        }
 
         onUpdate?.({
           content: [{ type: 'text', text: `Transcribing ${formatBytes(fileSizeBytes)} of audio via Whisper...` }],

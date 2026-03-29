@@ -41,3 +41,11 @@ export {
 } from './security/index.js';
 export { isValidCron, isValidCronField } from './cron.js';
 export { getVersion } from './version.js';
+export {
+  fetchLatestRelease,
+  compareSemver,
+  detectInstallMethod,
+  getUpdateInstructions,
+  formatUpdateNotification,
+  type InstallMethod,
+} from './update-checker.js';

@@ -9,6 +9,7 @@ export interface ProcessorDeps {
   reminderProcessor: (job: Job<JobData>) => Promise<void>;
   exportCleanupProcessor?: (job: Job<JobData>) => Promise<void>;
   trashPurgeProcessor?: (job: Job<JobData>) => Promise<void>;
+  updateCheckProcessor?: (job: Job<JobData>) => Promise<void>;
   logger: Logger;
 }
 
@@ -43,6 +44,13 @@ export function createJobRouter(deps: ProcessorDeps) {
         return;
       }
       await deps.trashPurgeProcessor(job);
+      return;
+    }
+
+    if (type === 'update_check' || type === 'update-check') {
+      if (deps.updateCheckProcessor) {
+        await deps.updateCheckProcessor(job);
+      }
       return;
     }
 

@@ -1,5 +1,5 @@
 ---
-name: implement-hive-task
+name: implement-task
 description: >
   Implements a project task from docs/IMPLEMENTATION.md when the user says
   "implement task X.XX" (e.g. "implement task 1.11", "implement task 2.02").

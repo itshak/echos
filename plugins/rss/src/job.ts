@@ -40,12 +40,9 @@ export function createRssPollJob(context: PluginContext, store: FeedStore): Sche
 
           let latestDate = feed.lastEntryDate;
           for (const entry of sorted) {
-            // Skip already-saved entries (dedup by guid)
-            if (store.hasEntry(feed.id, entry.guid)) continue;
-
             try {
-              await processEntry(entry, feed, store, context);
-              if (entry.publishedAt) {
+              const wasSaved = await processEntry(entry, feed, store, context);
+              if (wasSaved && entry.publishedAt) {
                 if (!latestDate || entry.publishedAt > latestDate) {
                   latestDate = entry.publishedAt;
                 }

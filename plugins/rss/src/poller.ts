@@ -6,7 +6,7 @@ import { processArticle } from '@echos/plugin-article';
 import type { PluginContext } from '@echos/core';
 import type { NoteMetadata } from '@echos/shared';
 import { categorizeContent } from '@echos/core';
-import type { Feed, FeedEntry, FeedStore } from './feed-store.js';
+import type { Feed, FeedStore } from './feed-store.js';
 
 const parser = new RSSParser({
   timeout: 30000,
@@ -57,12 +57,16 @@ export async function pollFeed(feed: Feed, logger: Logger): Promise<NewEntry[]> 
   return newEntries;
 }
 
+/**
+ * Processes a feed entry: claims the guid, extracts article content, saves as a note.
+ * Returns true if the entry was saved, false if it was already claimed (duplicate).
+ */
 export async function processEntry(
   entry: NewEntry,
   feed: Feed,
   store: FeedStore,
   context: PluginContext,
-): Promise<void> {
+): Promise<boolean> {
   const { sqlite, markdown, vectorDb, generateEmbedding, logger, config } = context;
 
   // Validate and process URL
@@ -71,7 +75,29 @@ export async function processEntry(
     validatedUrl = validateUrl(entry.url);
   } catch {
     logger.warn({ url: entry.url, feedId: feed.id }, 'Skipping entry with invalid URL');
-    return;
+    return false;
+  }
+
+  const now = new Date().toISOString();
+  const id = uuidv4();
+
+  // Atomically claim the (feedId, guid) slot before doing any work.
+  // This prevents concurrent poll + refresh from creating duplicate notes:
+  // only the execution that successfully inserts the row proceeds.
+  const claimed = store.claimEntry({
+    id: uuidv4(),
+    feedId: feed.id,
+    guid: entry.guid,
+    url: validatedUrl,
+    title: entry.title,
+    publishedAt: entry.publishedAt,
+    savedNoteId: id,
+    createdAt: now,
+  });
+
+  if (!claimed) {
+    logger.debug({ feedId: feed.id, guid: entry.guid }, 'Entry already claimed by concurrent execution, skipping');
+    return false;
   }
 
   let title = entry.title;
@@ -90,25 +116,26 @@ export async function processEntry(
     content = `*Source:* ${validatedUrl}\n\n*Feed:* ${feed.name}\n\n*Note:* Full content could not be extracted.`;
   }
 
-  const now = new Date().toISOString();
-  const id = uuidv4();
-
   // Auto-categorize with AI
+  // Use anthropicApiKey for Anthropic/Claude models; fall back to llmApiKey for custom endpoints.
   let category = 'articles';
   const tags = [...feed.tags, 'rss'];
 
-  if (config.anthropicApiKey && content) {
+  const apiKey = (config.anthropicApiKey ?? config['llmApiKey']) as string | undefined;
+  const baseUrl = config['llmBaseUrl'] as string | undefined;
+
+  if (content && apiKey) {
     try {
       const vocabulary = sqlite.getTopTagsWithCounts(50);
       const result = await categorizeContent(
         title,
         content,
         'lightweight',
-        config.anthropicApiKey as string,
+        apiKey,
         logger,
         undefined,
-        config.defaultModel as string,
-        undefined,
+        (config.defaultModel as string | undefined) ?? 'claude-haiku-4-5-20251001',
+        baseUrl,
         vocabulary,
       );
       category = result.category;
@@ -149,18 +176,6 @@ export async function processEntry(
     }
   }
 
-  // Record in feed_entries
-  const feedEntry: FeedEntry = {
-    id: uuidv4(),
-    feedId: feed.id,
-    guid: entry.guid,
-    url: validatedUrl,
-    title,
-    publishedAt: entry.publishedAt,
-    savedNoteId: id,
-    createdAt: now,
-  };
-  store.insertEntry(feedEntry);
-
   logger.info({ feedId: feed.id, noteId: id, title }, 'Feed entry saved as note');
+  return true;
 }

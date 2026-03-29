@@ -160,9 +160,16 @@ function handleRemove(params: Params, store: FeedStore): AgentToolResult<unknown
     return err('Error: url is required for remove action');
   }
 
-  const feed = store.getFeedByUrl(params.url);
+  let normalizedUrl: string;
+  try {
+    normalizedUrl = validateUrl(params.url);
+  } catch {
+    return err(`Error: Invalid URL: ${params.url}`);
+  }
+
+  const feed = store.getFeedByUrl(normalizedUrl);
   if (!feed) {
-    return ok(`No feed found with URL: ${params.url}`);
+    return ok(`No feed found with URL: ${normalizedUrl}`);
   }
 
   store.deleteFeed(feed.id);
@@ -179,8 +186,17 @@ async function handleRefresh(
   store: FeedStore,
 ): Promise<AgentToolResult<unknown>> {
   const { logger } = context;
-  const allFeeds = params.url
-    ? [store.getFeedByUrl(params.url)].filter((f): f is NonNullable<typeof f> => f !== undefined)
+  let lookupUrl = params.url;
+  if (lookupUrl) {
+    try {
+      lookupUrl = validateUrl(lookupUrl);
+    } catch {
+      return ok(`Error: Invalid URL: ${params.url}`);
+    }
+  }
+
+  const allFeeds = lookupUrl
+    ? [store.getFeedByUrl(lookupUrl)].filter((f): f is NonNullable<typeof f> => f !== undefined)
     : store.listFeeds();
 
   if (allFeeds.length === 0) {
@@ -213,12 +229,13 @@ async function handleRefresh(
       let latestDate = feed.lastEntryDate;
 
       for (const entry of sorted) {
-        if (store.hasEntry(feed.id, entry.guid)) continue;
         try {
-          await processEntry(entry, feed, store, context);
-          saved++;
-          if (entry.publishedAt && (!latestDate || entry.publishedAt > latestDate)) {
-            latestDate = entry.publishedAt;
+          const wasSaved = await processEntry(entry, feed, store, context);
+          if (wasSaved) {
+            saved++;
+            if (entry.publishedAt && (!latestDate || entry.publishedAt > latestDate)) {
+              latestDate = entry.publishedAt;
+            }
           }
         } catch (e) {
           logger.error({ feedId: feed.id, url: entry.url, err: e }, 'Failed to process entry during refresh');

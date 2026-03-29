@@ -26,7 +26,6 @@ CREATE TABLE IF NOT EXISTS feed_entries (
 );
 
 CREATE INDEX IF NOT EXISTS idx_feed_entries_feed_id ON feed_entries(feed_id);
-CREATE INDEX IF NOT EXISTS idx_feed_entries_guid ON feed_entries(feed_id, guid);
 `;
 
 export interface Feed {
@@ -82,15 +81,19 @@ export interface FeedStore {
   listFeeds(): Feed[];
   deleteFeed(id: string): boolean;
   updateLastChecked(id: string, lastCheckedAt: string, lastEntryDate?: string): void;
-  hasEntry(feedId: string, guid: string): boolean;
-  insertEntry(entry: FeedEntry): void;
+  /**
+   * Atomically claims a (feedId, guid) slot.
+   * Inserts the entry row and returns true if the row was newly inserted.
+   * Returns false if the guid was already claimed (duplicate).
+   */
+  claimEntry(entry: FeedEntry): boolean;
   getEntryCount(feedId: string): number;
   close(): void;
 }
 
 export function createFeedStore(dbPath: string): FeedStore {
   const dir = dirname(dbPath);
-  mkdirSync(join(dir), { recursive: true });
+  mkdirSync(dir, { recursive: true });
 
   const db = new Database(dbPath);
   db.pragma('journal_mode = WAL');
@@ -146,15 +149,8 @@ export function createFeedStore(dbPath: string): FeedStore {
       }
     },
 
-    hasEntry(feedId: string, guid: string): boolean {
-      const row = db
-        .prepare('SELECT 1 FROM feed_entries WHERE feed_id = ? AND guid = ?')
-        .get(feedId, guid);
-      return row !== undefined;
-    },
-
-    insertEntry(entry: FeedEntry): void {
-      db.prepare(
+    claimEntry(entry: FeedEntry): boolean {
+      const info = db.prepare(
         `INSERT OR IGNORE INTO feed_entries
            (id, feed_id, guid, url, title, published_at, saved_note_id, created_at)
          VALUES (@id, @feedId, @guid, @url, @title, @publishedAt, @savedNoteId, @createdAt)`,
@@ -168,6 +164,7 @@ export function createFeedStore(dbPath: string): FeedStore {
         savedNoteId: entry.savedNoteId,
         createdAt: entry.createdAt,
       });
+      return info.changes > 0;
     },
 
     getEntryCount(feedId: string): number {

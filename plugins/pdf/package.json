@@ -1,0 +1,30 @@
+{
+  "name": "@echos/plugin-pdf",
+  "version": "0.13.1",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@echos/core": "workspace:*",
+    "@echos/shared": "workspace:*",
+    "@mariozechner/pi-agent-core": "^0.63.1",
+    "@mariozechner/pi-ai": "^0.63.1",
+    "@sinclair/typebox": "^0.34.49",
+    "pdf-parse": "^1.1.1",
+    "pino": "^10.3.1",
+    "uuid": "^13.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^25.5.0",
+    "@types/pdf-parse": "^1.1.4",
+    "@types/uuid": "^11.0.0",
+    "typescript": "^5.7.0"
+  }
+}

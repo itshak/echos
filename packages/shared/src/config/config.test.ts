@@ -33,6 +33,7 @@ describe('loadConfig', () => {
     expect(config.enableTelegram).toBe(true);
     expect(config.enableWeb).toBe(false);
     expect(config.webPort).toBe(3000);
+    expect(config.telegramReactions).toBe(true);
   });
 
   it('should throw on missing required fields', () => {
@@ -126,6 +127,16 @@ describe('loadConfig', () => {
   it('defaults whisperLanguage to undefined when not set', () => {
     const config = loadConfig(validEnv);
     expect(config.whisperLanguage).toBeUndefined();
+  });
+
+  it('defaults telegramReactions to true when unset', () => {
+    const config = loadConfig(validEnv);
+    expect(config.telegramReactions).toBe(true);
+  });
+
+  it('disables telegramReactions when TELEGRAM_REACTIONS=false', () => {
+    const config = loadConfig({ ...validEnv, TELEGRAM_REACTIONS: 'false' });
+    expect(config.telegramReactions).toBe(false);
   });
 
   it('resolves ECHOS_HOME from env parameter for storage defaults', () => {

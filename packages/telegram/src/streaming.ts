@@ -362,6 +362,20 @@ export async function streamAgentResponse(
 
   if (textBuffer) {
     await updateMessage();
+
+    // If the response was truncated, attach the full text as a .md file
+    const html = markdownToHtml(textBuffer);
+    if (html.length > MAX_MESSAGE_LENGTH || textBuffer.length > MAX_MESSAGE_LENGTH) {
+      try {
+        const buf = Buffer.from(textBuffer, 'utf8');
+        const date = new Date().toISOString().slice(0, 10);
+        await ctx.replyWithDocument(new InputFile(buf, `response-${date}.md`), {
+          caption: '📎 Full response attached (message was truncated)',
+        });
+      } catch {
+        // Non-fatal: the truncated message was already delivered
+      }
+    }
   } else if (agentError && isAgentMessageOverflow(lastAssistantMessage, agent.state.model.contextWindow)) {
     await updateMessage('⚠️ Conversation history is too long. Use /reset to start a new session.');
   } else if (agentError) {

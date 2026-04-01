@@ -192,11 +192,66 @@ function formatQuoteTweet(quote: FxTweet): string {
   return section;
 }
 
+/** Resolve an atomic block to its media URL via entityMap → media_entities chain. */
+function resolveAtomicMedia(
+  block: FxArticleBlock,
+  entityMap: Record<string, any>,
+  mediaEntities: any[],
+): string {
+  const ranges = block.entityRanges as Array<{ key: number; length: number; offset: number }>;
+  if (!ranges?.[0]) return '';
+
+  const entityKey = String(ranges[0].key);
+  const entity = entityMap[entityKey];
+
+  if (entity?.value?.type === 'DIVIDER') {
+    return '---';
+  }
+
+  if (!entity?.value?.data?.mediaItems?.[0]?.mediaId) return '';
+
+  const mediaId = entity.value.data.mediaItems[0].mediaId;
+  const mediaEntity = mediaEntities.find((e: any) => e.media_id === mediaId);
+  if (!mediaEntity?.media_info) return '';
+
+  const info = mediaEntity.media_info;
+  const caption = entity.value.data.caption ? `
+*${entity.value.data.caption}*` : '';
+
+  if (info.__typename === 'ApiImage') {
+    const url = info.original_img_url;
+    return url ? `![image](${url})${caption}` : '';
+  }
+
+  if (info.__typename === 'ApiVideo') {
+    const variants = info.variants ?? [];
+    const mp4 = variants
+      .filter((v: any) => v.content_type === 'video/mp4')
+      .sort((a: any, b: any) => (b.bit_rate || 0) - (a.bit_rate || 0))[0];
+    const url = mp4?.url || info.preview_image?.original_img_url;
+    return url ? `[Video](${url})${caption}` : '';
+  }
+
+  return '';
+}
+
 /** Format draft.js blocks into markdown. */
-function formatArticleBlocks(blocks: FxArticleBlock[]): string {
+function formatArticleBlocks(
+  blocks: FxArticleBlock[],
+  entityMap?: Record<string, any>,
+  mediaEntities?: any[],
+): string {
+  const resolvedEntityMap = entityMap ?? {};
+  const resolvedMediaEntities = mediaEntities ?? [];
   const markdownBlocks: string[] = [];
 
   for (const block of blocks) {
+    if (block.type === 'atomic') {
+      const media = resolveAtomicMedia(block, resolvedEntityMap, resolvedMediaEntities);
+      if (media) markdownBlocks.push(media);
+      continue;
+    }
+
     if (!block.text && block.type === 'unstyled') {
       markdownBlocks.push('');
       continue;
@@ -256,7 +311,7 @@ function formatSingleTweet(tweet: FxTweet, sourceUrl: string): string {
     if (tweet.article.title) {
       markdown += `# ${tweet.article.title}\n\n`;
     }
-    markdown += `${formatArticleBlocks(tweet.article.content.blocks)}\n\n`;
+    markdown += `${formatArticleBlocks(tweet.article.content.blocks, tweet.article.content.entityMap as Record<string, any>, tweet.article.media_entities as any[] ?? [])}\n\n`;
   } else if (tweet.text) {
     const tweetLines = tweet.text.split('\n').map((line) => `> ${line}`).join('\n');
     markdown += `${tweetLines}\n\n`;
@@ -294,7 +349,7 @@ function formatThread(tweets: FxTweet[], sourceUrl: string): string {
 
     if (!text && t.article) {
       if (t.article.title) text += `# ${t.article.title}\n\n`;
-      text += formatArticleBlocks(t.article.content.blocks);
+      text += formatArticleBlocks(t.article.content.blocks, t.article.content.entityMap as Record<string, any>, t.article.media_entities as any[] ?? []);
     }
 
     return text;

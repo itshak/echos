@@ -244,6 +244,7 @@ Optional:
 - `WHISPER_LANGUAGE` - ISO-639-1 code (e.g. `en`, `fr`, `de`) to pin Whisper transcription language. If unset, Whisper auto-detects. See [Troubleshooting](/troubleshooting#whisper-transcribes-audio-in-the-wrong-language).
 - `CACHE_RETENTION` - Prompt cache TTL for Anthropic models: `long` (1h, default), `short` (5min), `none` (off). Always `none` for custom endpoints.
 - `DISABLE_UPDATE_CHECK` - Set to `true` to disable the daily update check. Useful for air-gapped environments with no internet access.
+- `TELEGRAM_REACTIONS` - Set to `false` to disable emoji reactions (👀, 🤗) on incoming Telegram messages. Default: `true`.
 
 Redis (required):
 - `REDIS_URL` - Redis connection URL (default: `redis://localhost:6379`)

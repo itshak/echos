@@ -117,6 +117,15 @@ When you press a button, the action executes immediately (no AI round-trip) and 
 - ✅ Mid-run steering and follow-up queuing
 - ✅ File exports delivered as document attachments
 - ✅ Inline keyboards for quick actions on list results
+- ✅ Configurable emoji reactions (can be disabled)
+
+### Configuration
+
+| Variable | Default | Description |
+|---|---|---|
+| `TELEGRAM_BOT_TOKEN` | — | Bot token from @BotFather (required) |
+| `ALLOWED_USER_IDS` | — | Comma-separated Telegram user IDs (required) |
+| `TELEGRAM_REACTIONS` | `true` | Send emoji reactions (👀, 🤗) on incoming messages. Set to `false` to disable. |
 
 ### Security
 

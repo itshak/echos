@@ -129,8 +129,8 @@ describe('loadConfig', () => {
     expect(config.whisperLanguage).toBeUndefined();
   });
 
-  it('defaults telegramReactions to true when unset', () => {
-    const config = loadConfig(validEnv);
+  it('enables telegramReactions when TELEGRAM_REACTIONS=true', () => {
+    const config = loadConfig({ ...validEnv, TELEGRAM_REACTIONS: 'true' });
     expect(config.telegramReactions).toBe(true);
   });
 

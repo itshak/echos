@@ -22,17 +22,51 @@ interface FxArticleBlock {
   data: unknown;
 }
 
+interface FxEntityRange {
+  key: number;
+  length: number;
+  offset: number;
+}
+
+interface FxEntityMapEntry {
+  value?: {
+    type?: string;
+    data?: {
+      mediaItems?: Array<{ mediaId?: string }>;
+      caption?: string;
+    };
+  };
+}
+
+interface FxVideoVariant {
+  content_type?: string;
+  bit_rate?: number;
+  url?: string;
+}
+
+interface FxMediaEntityInfo {
+  __typename?: string;
+  original_img_url?: string;
+  preview_image?: { original_img_url?: string };
+  variants?: FxVideoVariant[];
+}
+
+interface FxMediaEntity {
+  media_id?: string;
+  media_info?: FxMediaEntityInfo;
+}
+
 interface FxArticle {
   title: string;
   preview_text: string;
   content: {
     blocks: FxArticleBlock[];
-    entityMap: unknown;
+    entityMap: Record<string, FxEntityMapEntry>;
   };
   cover_media?: unknown;
   created_at: string;
   id: string;
-  media_entities?: unknown[];
+  media_entities?: FxMediaEntity[];
   modified_at: string;
 }
 
@@ -192,13 +226,13 @@ function formatQuoteTweet(quote: FxTweet): string {
   return section;
 }
 
-/** Resolve an atomic block to its media URL via entityMap → media_entities chain. */
-function resolveAtomicMedia(
+/** Render an atomic block as inline markdown via entityMap → media_entities chain. */
+function renderAtomicBlock(
   block: FxArticleBlock,
-  entityMap: Record<string, any>,
-  mediaEntities: any[],
+  entityMap: Record<string, FxEntityMapEntry>,
+  mediaById: Map<string, FxMediaEntity>,
 ): string {
-  const ranges = block.entityRanges as Array<{ key: number; length: number; offset: number }>;
+  const ranges = block.entityRanges as FxEntityRange[];
   if (!ranges?.[0]) return '';
 
   const entityKey = String(ranges[0].key);
@@ -208,15 +242,14 @@ function resolveAtomicMedia(
     return '---';
   }
 
-  if (!entity?.value?.data?.mediaItems?.[0]?.mediaId) return '';
+  const mediaId = entity?.value?.data?.mediaItems?.[0]?.mediaId;
+  if (!mediaId) return '';
 
-  const mediaId = entity.value.data.mediaItems[0].mediaId;
-  const mediaEntity = mediaEntities.find((e: any) => e.media_id === mediaId);
+  const mediaEntity = mediaById.get(mediaId);
   if (!mediaEntity?.media_info) return '';
 
   const info = mediaEntity.media_info;
-  const caption = entity.value.data.caption ? `
-*${entity.value.data.caption}*` : '';
+  const caption = entity.value?.data?.caption ? `\n*${entity.value.data.caption}*` : '';
 
   if (info.__typename === 'ApiImage') {
     const url = info.original_img_url;
@@ -225,10 +258,15 @@ function resolveAtomicMedia(
 
   if (info.__typename === 'ApiVideo') {
     const variants = info.variants ?? [];
-    const mp4 = variants
-      .filter((v: any) => v.content_type === 'video/mp4')
-      .sort((a: any, b: any) => (b.bit_rate || 0) - (a.bit_rate || 0))[0];
-    const url = mp4?.url || info.preview_image?.original_img_url;
+    let bestMp4: FxVideoVariant | undefined;
+    for (const v of variants) {
+      if (v.content_type === 'video/mp4') {
+        if (!bestMp4 || (v.bit_rate ?? 0) > (bestMp4.bit_rate ?? 0)) {
+          bestMp4 = v;
+        }
+      }
+    }
+    const url = bestMp4?.url ?? info.preview_image?.original_img_url;
     return url ? `[Video](${url})${caption}` : '';
   }
 
@@ -238,16 +276,19 @@ function resolveAtomicMedia(
 /** Format draft.js blocks into markdown. */
 function formatArticleBlocks(
   blocks: FxArticleBlock[],
-  entityMap?: Record<string, any>,
-  mediaEntities?: any[],
+  entityMap?: Record<string, FxEntityMapEntry>,
+  mediaEntities?: FxMediaEntity[],
 ): string {
   const resolvedEntityMap = entityMap ?? {};
-  const resolvedMediaEntities = mediaEntities ?? [];
+  const mediaById = new Map<string, FxMediaEntity>();
+  for (const me of mediaEntities ?? []) {
+    if (me.media_id) mediaById.set(me.media_id, me);
+  }
   const markdownBlocks: string[] = [];
 
   for (const block of blocks) {
     if (block.type === 'atomic') {
-      const media = resolveAtomicMedia(block, resolvedEntityMap, resolvedMediaEntities);
+      const media = renderAtomicBlock(block, resolvedEntityMap, mediaById);
       if (media) markdownBlocks.push(media);
       continue;
     }
@@ -311,7 +352,7 @@ function formatSingleTweet(tweet: FxTweet, sourceUrl: string): string {
     if (tweet.article.title) {
       markdown += `# ${tweet.article.title}\n\n`;
     }
-    markdown += `${formatArticleBlocks(tweet.article.content.blocks, tweet.article.content.entityMap as Record<string, any>, tweet.article.media_entities as any[] ?? [])}\n\n`;
+    markdown += `${formatArticleBlocks(tweet.article.content.blocks, tweet.article.content.entityMap, tweet.article.media_entities ?? [])}\n\n`;
   } else if (tweet.text) {
     const tweetLines = tweet.text.split('\n').map((line) => `> ${line}`).join('\n');
     markdown += `${tweetLines}\n\n`;
@@ -349,7 +390,7 @@ function formatThread(tweets: FxTweet[], sourceUrl: string): string {
 
     if (!text && t.article) {
       if (t.article.title) text += `# ${t.article.title}\n\n`;
-      text += formatArticleBlocks(t.article.content.blocks, t.article.content.entityMap as Record<string, any>, t.article.media_entities as any[] ?? []);
+      text += formatArticleBlocks(t.article.content.blocks, t.article.content.entityMap, t.article.media_entities ?? []);
     }
 
     return text;

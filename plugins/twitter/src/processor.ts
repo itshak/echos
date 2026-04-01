@@ -246,10 +246,11 @@ function renderAtomicBlock(
   if (!mediaId) return '';
 
   const mediaEntity = mediaById.get(mediaId);
-  if (!mediaEntity?.media_info) return '';
+  if (!mediaEntity || !mediaEntity.media_info) return '';
 
   const info = mediaEntity.media_info;
-  const caption = entity.value?.data?.caption ? `\n*${entity.value.data.caption}*` : '';
+  const captionText = entity?.value?.data?.caption;
+  const caption = captionText ? `\n*${captionText}*` : '';
 
   if (info.__typename === 'ApiImage') {
     const url = info.original_img_url;

@@ -17,14 +17,6 @@
 
 ---
 
-<div align="center">
-
-
-
-[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/P5P71PDYLX)
-
-</div>
-
 > [!NOTE]
 > EchOS is a personal project — built for one user, deployed on your own infrastructure. It is intentionally not multi-tenant.
 

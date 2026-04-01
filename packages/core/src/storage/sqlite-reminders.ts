@@ -23,6 +23,8 @@ function rowToReminder(row: Record<string, unknown>): ReminderEntry {
   if (desc) entry.description = desc;
   const due = row['due_date'] as string | null;
   if (due) entry.dueDate = due;
+  const recurrence = row['recurrence'] as string | null;
+  if (recurrence !== null) entry.recurrence = recurrence as NonNullable<ReminderEntry['recurrence']>;
   return entry;
 }
 
@@ -41,6 +43,7 @@ export function createReminderOps(
         priority: reminder.priority,
         completed: reminder.completed ? 1 : 0,
         kind: reminder.kind,
+        recurrence: reminder.recurrence ?? null,
         created: reminder.created,
         updated: reminder.updated,
       });

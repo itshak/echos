@@ -69,5 +69,6 @@ export function buildAgentDeps(
     knowledgeDir: config.knowledgeDir,
     dbPath: config.dbPath,
     sttClient,
+    maxContextTokens: config.maxContextTokens,
   };
 }

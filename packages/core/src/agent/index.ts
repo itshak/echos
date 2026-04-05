@@ -27,10 +27,7 @@ function pickApiKey(provider: string, deps: AgentDeps): string {
 }
 
 export function createEchosAgent(deps: AgentDeps): Agent {
-  const model = resolveModel(
-    deps.modelId ?? 'claude-haiku-4-5-20251001',
-    deps.llmBaseUrl,
-  );
+  const model = resolveModel(deps.modelId ?? 'claude-haiku-4-5-20251001', deps.llmBaseUrl);
   const apiKey = pickApiKey(model.provider as string, deps);
 
   // Prompt caching is only supported by Anthropic models
@@ -98,7 +95,7 @@ export function createEchosAgent(deps: AgentDeps): Agent {
       thinkingLevel: deps.thinkingLevel ?? 'off',
     },
     convertToLlm: echosConvertToLlm,
-    transformContext: createContextWindow(80_000),
+    transformContext: createContextWindow(deps.maxContextTokens ?? 80_000),
   });
 
   // Wire the mutable ref so set_agent_voice can update the system prompt mid-session

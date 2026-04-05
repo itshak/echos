@@ -111,6 +111,10 @@ export const configSchema = z
       .default('false')
       .transform((s) => s === 'true'),
 
+    // Max tokens for conversation context window (default: 80_000).
+    // Use ~7000 for Groq free tier to stay under 8K TPM limit.
+    maxContextTokens: z.coerce.number().int().positive().default(80_000),
+
     // Update checker
     disableUpdateCheck: z
       .string()
@@ -194,6 +198,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     thinkingLevel: env['THINKING_LEVEL'],
     cacheRetention: env['CACHE_RETENTION'],
     logLlmPayloads: env['LOG_LLM_PAYLOADS'],
+    maxContextTokens: env['MAX_CONTEXT_TOKENS'],
     disableUpdateCheck: env['DISABLE_UPDATE_CHECK'],
     backupEnabled: env['BACKUP_ENABLED'],
     backupCron: env['BACKUP_CRON'],

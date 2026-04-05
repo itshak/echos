@@ -21,17 +21,11 @@ export function createSttClient(config: Config): SpeechToTextClient | undefined 
     if (!apiKey) {
       return undefined;
     }
-
-    let baseUrl = config.sttBaseUrl;
-    if (!baseUrl) {
-      if (config.sttModel?.includes('whisper-large-v3')) {
-        baseUrl = 'https://api.groq.com/openai/v1';
-      } else {
-        baseUrl = 'https://api.openai.com/v1';
-      }
-    }
-
-    return new OpenAICompatibleClient(apiKey, baseUrl, config.sttModel ?? 'whisper-1');
+    return new OpenAICompatibleClient(
+      apiKey,
+      config.sttBaseUrl ?? 'https://api.openai.com/v1',
+      config.sttModel ?? 'whisper-1',
+    );
   }
 
   return undefined;

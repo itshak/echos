@@ -7,7 +7,6 @@ import {
   createContextMessage,
   createUserMessage,
   type ExportFileResult,
-  selectToolsForMessage,
 } from '@echos/core';
 import {
   buildReadingQueueKeyboard,
@@ -365,20 +364,10 @@ export async function streamAgentResponse(
   const now = new Date();
   const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
-  // Dynamic tool selection: pick only tools relevant to the user message
-  const allTools = agent.state.tools;
-  if (allTools.length > 0) {
-    const selected = selectToolsForMessage(allTools, prompt);
-    if (selected.length > 0 && selected.length < allTools.length) {
-      agent.state.tools = selected;
-    }
-    // Log tool selection for debugging
-    const activeTools = agent.state.tools.map((t: { name: string }) => t.name);
-    const toolJson = JSON.stringify(agent.state.tools);
-    console.log(
-      `[TOOL-SELECT] message="${prompt.slice(0, 50)}" tools=${activeTools.length}/${allTools.length} [${activeTools.join(', ')}] toolJsonLen=${toolJson.length}`,
-    );
-  }
+  // For Groq free tier (8K TPM), we send ALL tools since the math works out:
+  // ~2734 prompt + 5000 max_completion = 7734 < 8000
+  // This also means the agent works correctly for ANY language.
+  // Tool selection is only needed for providers with very strict token limits.
 
   try {
     await agent.prompt([
@@ -391,8 +380,6 @@ export async function streamAgentResponse(
     clearInterval(typingInterval);
     unsubscribe();
     if (editTimeout) clearTimeout(editTimeout);
-    // Restore full tool set after the prompt completes
-    agent.state.tools = allTools;
   }
 
   const agentError = agent.state.error;

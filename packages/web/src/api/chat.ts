@@ -5,7 +5,6 @@ import {
   isAgentMessageOverflow,
   createContextMessage,
   createUserMessage,
-  selectToolsForMessage,
 } from '@echos/core';
 import { validateContentSize } from '@echos/shared';
 import type { Logger } from 'pino';
@@ -89,20 +88,8 @@ export function registerChatRoutes(
     const now = new Date();
     const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
-    // Dynamic tool selection
-    const allTools = agent.state.tools;
-    if (allTools.length > 0) {
-      const selected = selectToolsForMessage(allTools, message);
-      if (selected.length > 0 && selected.length < allTools.length) {
-        const selectedNames = selected.map((t: { name: string }) => t.name);
-        logger.debug(
-          { selected: selectedNames.length, total: allTools.length, tools: selectedNames },
-          'Dynamic tool selection',
-        );
-        agent.state.tools = selected;
-      }
-    }
-
+    // Send all tools — fits within Groq 8K TPM limit (~2734 + 5000 = 7734)
+    // Works correctly for ANY language without keyword matching.
     try {
       await agent.prompt([
         createContextMessage(
@@ -112,7 +99,6 @@ export function registerChatRoutes(
       ]);
     } finally {
       unsubscribe();
-      agent.state.tools = allTools;
     }
 
     // Check for agent errors (pi-agent-core swallows errors internally)

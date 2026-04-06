@@ -32,9 +32,9 @@ export function createEchosAgent(deps: AgentDeps): Agent {
 
   // Override maxTokens for Groq free tier (8K TPM limit)
   // Groq counts prompt + max_completion_tokens towards TPM
-  // With ~2K prompt, we need maxTokens <= 6K to stay under 8K
+  // Most responses are <500 tokens, so 1024 is plenty
   if ((model.provider as string) === 'groq' || model.baseUrl?.includes('groq.com')) {
-    model.maxTokens = 5000;
+    model.maxTokens = 1024;
   }
 
   // Prompt caching is only supported by Anthropic models

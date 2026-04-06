@@ -52,7 +52,7 @@ export function resolveModel(spec: string, baseUrl?: string): Model<any> {
       input: ['text' as const],
       cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
       contextWindow: 128000,
-      maxTokens: 5000, // Reduced for Groq free tier TPM limits
+      maxTokens: 1024, // Reduced for Groq free tier TPM limits (prompt + max_completion counted)
     } as Model<any>;
   }
 

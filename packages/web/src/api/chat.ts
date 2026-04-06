@@ -12,6 +12,35 @@ import type { Logger } from 'pino';
 import { createSessionManager } from './sessions.js';
 import { registerChatSubRoutes } from './chat-routes.js';
 
+/**
+ * Detect the language of a message by checking for non-ASCII characters.
+ * Returns a human-readable language name for the AI system prompt.
+ */
+function detectWebLanguage(text: string): string {
+  // Check for Cyrillic (Russian, Ukrainian, Belarusian, etc.)
+  if (/[\u0400-\u04FF]/.test(text)) {
+    // Distinguish Ukrainian from Russian
+    if (/єї|і|ї|є|ґ/.test(text)) return 'Ukrainian';
+    return 'Russian';
+  }
+  // Check for Arabic
+  if (/[\u0600-\u06FF\u0750-\u077F]/.test(text)) return 'Arabic';
+  // Check for Chinese
+  if (/[\u4E00-\u9FFF]/.test(text)) return 'Chinese';
+  // Check for Japanese
+  if (/[\u3040-\u309F\u30A0-\u30FF]/.test(text)) return 'Japanese';
+  // Check for Korean
+  if (/[\uAC00-\uD7AF\u1100-\u11FF]/.test(text)) return 'Korean';
+  // Check for Hebrew
+  if (/[\u0590-\u05FF]/.test(text)) return 'Hebrew';
+  // Check for Thai
+  if (/[\u0E00-\u0E7F]/.test(text)) return 'Thai';
+  // Check for Hindi/Devanagari
+  if (/[\u0900-\u097F]/.test(text)) return 'Hindi';
+  // Default to English for Latin alphabet or mixed content
+  return 'English';
+}
+
 export function registerChatRoutes(
   app: FastifyInstance,
   agentDeps: AgentDeps,
@@ -89,6 +118,9 @@ export function registerChatRoutes(
     const now = new Date();
     const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
+    // Detect user's language and instruct AI to respond in the same language
+    const detectedLang = detectWebLanguage(message);
+
     // Tool selection: 25 essential tools always available + keyword bonus for English
     const allTools = agent.state.tools;
     if (allTools.length > 0) {
@@ -101,7 +133,7 @@ export function registerChatRoutes(
     try {
       await agent.prompt([
         createContextMessage(
-          `Current date/time: ${now.toISOString()} (${now.toLocaleString('en-US', { timeZone: tz })} ${tz})`,
+          `Current date/time: ${now.toISOString()} (${now.toLocaleString('en-US', { timeZone: tz })} ${tz}).\n\nIMPORTANT: The user's message is in ${detectedLang}. ALWAYS respond in ${detectedLang} — never switch to English unless explicitly asked.`,
         ),
         createUserMessage(message),
       ]);

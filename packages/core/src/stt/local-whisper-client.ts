@@ -2,13 +2,16 @@ import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { readFile, unlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join, extname } from 'node:path';
-import { ProcessingError } from '@echos/shared';
+import { join } from 'node:path';
 import type { SpeechToTextClient, TranscribeOptions, TranscribeResult } from './index.js';
 
-function spawnAsync(command: string, args: string[]): Promise<{ stdout: string; stderr: string }> {
+function spawnAsync(
+  command: string,
+  args: string[],
+  shell = false,
+): Promise<{ stdout: string; stderr: string }> {
   return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { stdio: ['pipe', 'pipe', 'pipe'] });
+    const child = spawn(command, args, { stdio: ['pipe', 'pipe', 'pipe'], shell });
     let stdout = '';
     let stderr = '';
     child.stdout.on('data', (d) => {
@@ -65,14 +68,7 @@ export class LocalWhisperClient implements SpeechToTextClient {
         await unlink(inputPath).catch(() => undefined);
       }
 
-      const modelPath = `${this.modelDir ?? '/usr/local/share/whisper.cpp/models'}/${this.model}.bin`;
-      const args = ['-m', modelPath, '-f', audioPath, '-otxt'];
-      if (language) args.push('-l', language);
-
-      await spawnAsync(this.command, args);
-
-      const txtPath = `${audioPath}.txt`;
-      const text = await readFile(txtPath, 'utf-8');
+      const text = await this.runTranscription(audioPath, language);
 
       return { text: text.trim(), provider: `local/${this.model}`, duration: Date.now() - start };
     } finally {
@@ -85,5 +81,32 @@ export class LocalWhisperClient implements SpeechToTextClient {
         }
       }
     }
+  }
+
+  private async runTranscription(audioPath: string, language?: string): Promise<string> {
+    const isPythonScript = this.command.endsWith('.py') || this.command.includes('python');
+
+    if (isPythonScript) {
+      const parts = this.command.trim().split(/\s+/);
+      const cmd = parts[0]!;
+      const scriptArgs = parts.slice(1);
+      const args = [...scriptArgs, '-f', audioPath];
+      if (this.model) args.push('-m', this.model);
+      if (language) args.push('-l', language);
+      if (this.modelDir) {
+        args.push('-o', this.modelDir);
+      }
+      const { stdout } = await spawnAsync(cmd, args);
+      return stdout.trim();
+    }
+
+    const modelPath = `${this.modelDir ?? '/usr/local/share/whisper.cpp/models'}/${this.model}.bin`;
+    const args = ['-m', modelPath, '-f', audioPath, '-otxt'];
+    if (language) args.push('-l', language);
+
+    await spawnAsync(this.command, args);
+
+    const txtPath = `${audioPath}.txt`;
+    return (await readFile(txtPath, 'utf-8')).trim();
   }
 }

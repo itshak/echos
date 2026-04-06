@@ -372,6 +372,12 @@ export async function streamAgentResponse(
     if (selected.length > 0 && selected.length < allTools.length) {
       agent.state.tools = selected;
     }
+    // Log tool selection for debugging
+    const activeTools = agent.state.tools.map((t: { name: string }) => t.name);
+    const toolJson = JSON.stringify(agent.state.tools);
+    console.log(
+      `[TOOL-SELECT] message="${prompt.slice(0, 50)}" tools=${activeTools.length}/${allTools.length} [${activeTools.join(', ')}] toolJsonLen=${toolJson.length}`,
+    );
   }
 
   try {

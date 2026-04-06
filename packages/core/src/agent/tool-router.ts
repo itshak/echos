@@ -59,9 +59,9 @@ export const TOOL_CATEGORIES: ToolCategory[] = [
   {
     name: 'reminders',
     keywords: [
-      /\breminder\b/i,
+      /\breminder[s]?\b/i,
       /\bremind\s+me\b/i,
-      /\balarm\b/i,
+      /\balarm[s]?\b/i,
       /\bdue\s+(date|time)\b/i,
       /\bwhen\s+is\b/i,
     ],
@@ -70,9 +70,9 @@ export const TOOL_CATEGORIES: ToolCategory[] = [
   {
     name: 'todos',
     keywords: [
-      /\btodo\b/i,
-      /\btask\b/i,
-      /\bto[-\s]?do\b/i,
+      /\btodo[s]?\b/i,
+      /\btask[s]?\b/i,
+      /\bto[-\s]?do[s]?\b/i,
       /\bi\s+need\s+to\b/i,
       /\bi\s+have\s+to\b/i,
       /\bi\s+should\b/i,
@@ -172,7 +172,7 @@ export const TOOL_CATEGORIES: ToolCategory[] = [
 ];
 
 // Tools that are always available regardless of message content
-const ALWAYS_AVAILABLE = ['create_note', 'add_reminder', 'list_todos'];
+const ALWAYS_AVAILABLE = ['create_note', 'add_reminder', 'list_todos', 'list_reminders'];
 
 /**
  * Select relevant tools based on user message content.
@@ -181,7 +181,7 @@ const ALWAYS_AVAILABLE = ['create_note', 'add_reminder', 'list_todos'];
 export function selectToolsForMessage(
   allTools: AgentTool[],
   messageText: string,
-  maxTools = 12,
+  maxTools = 5,
 ): AgentTool[] {
   const messageLower = messageText.toLowerCase();
   const matchedToolNames = new Set<string>();
@@ -195,6 +195,13 @@ export function selectToolsForMessage(
         break;
       }
     }
+  }
+
+  // If no specific category matched, include search/knowledge tools as fallback
+  if (matchedToolNames.size === 0) {
+    matchedToolNames.add('search_knowledge');
+    matchedToolNames.add('list_notes');
+    matchedToolNames.add('get_note');
   }
 
   // Always include core tools

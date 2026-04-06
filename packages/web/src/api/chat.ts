@@ -94,6 +94,11 @@ export function registerChatRoutes(
     if (allTools.length > 0) {
       const selected = selectToolsForMessage(allTools, message);
       if (selected.length > 0 && selected.length < allTools.length) {
+        const selectedNames = selected.map((t: { name: string }) => t.name);
+        logger.debug(
+          { selected: selectedNames.length, total: allTools.length, tools: selectedNames },
+          'Dynamic tool selection',
+        );
         agent.state.tools = selected;
       }
     }

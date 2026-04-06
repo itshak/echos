@@ -89,7 +89,7 @@ export function registerChatRoutes(
     const now = new Date();
     const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
-    // Tool selection: 13 essential tools always available + keyword bonus for English
+    // Tool selection: 25 essential tools always available + keyword bonus for English
     const allTools = agent.state.tools;
     if (allTools.length > 0) {
       const selected = selectToolsForMessage(allTools, message);

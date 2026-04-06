@@ -183,48 +183,64 @@ const ALWAYS_AVAILABLE = [
 /**
  * Select relevant tools based on user message content.
  *
- * Real tools average ~644 chars each. With 48 tools, total is ~30,900 chars (~7,725 tokens)
- * plus system prompt (~900) plus max_completion (5,000) = ~13,625 TPM → exceeds 8K limit.
- *
- * Budget: 8,000 TPM - 5,000 max_completion - ~900 system = ~2,100 tokens for tools
- * At ~160 tokens/tool average → max **13 tools** fit.
+ * Real tools average ~644 chars (~160 tokens) each.
+ * Budget: 8,000 TPM - 1,024 max_completion - ~900 system - ~2,000 history = ~4,076 for tools
+ * At ~160 tokens/tool → max **25 tools** fit with ~2K history room.
  *
  * Strategy:
- * 1. ALWAYS_AVAILABLE: 13 most essential tools (works for ANY language)
- * 2. English keyword matching: adds extra tools on top if message is in English
- * 3. Cap at 15 total to stay safe
+ * 1. ALWAYS_AVAILABLE: 25 most essential tools (works for ANY language)
+ * 2. English keyword matching: adds extra tools on top (capped at 30)
  */
 export function selectToolsForMessage(
   allTools: AgentTool[],
   messageText: string,
-  maxTools = 15,
+  maxTools = 30,
 ): AgentTool[] {
   const messageLower = messageText.toLowerCase();
   const matchedToolNames = new Set<string>();
 
-  // Essential tools available for ANY language (13 tools = ~2,080 tokens)
-  // Covers: notes, search, reminders, todos, memory, tags, reading
+  // 25 Essential tools — covers notes, memory, reading, content saving, reminders, todos
+  // Works for ANY language (Hebrew, Russian, Arabic, Chinese, etc.)
   const ALWAYS_AVAILABLE = [
-    'create_note',       // Create notes
-    'search_knowledge',  // Search knowledge base
-    'get_note',          // Get note by ID
-    'list_notes',        // List notes
-    'add_reminder',      // Add reminders/todos
-    'list_reminders',    // View reminders
-    'complete_reminder', // Mark done
-    'list_todos',        // View todos
-    'remember_about_me', // Save facts to memory
-    'recall_knowledge',  // Search memory
-    'manage_tags',       // Tag management
-    'categorize_note',   // Auto-categorize
-    'mark_content',      // Mark as read/saved
+    // Core note operations (4)
+    'create_note',
+    'search_knowledge',
+    'get_note',
+    'list_notes',
+    // Note CRUD (4)
+    'update_note',
+    'delete_note',
+    'restore_note',
+    'list_trash',
+    // Reminders & Todos (4)
+    'add_reminder',
+    'list_reminders',
+    'complete_reminder',
+    'list_todos',
+    // Memory & Conversations (4)
+    'remember_about_me',
+    'recall_knowledge',
+    'save_conversation',
+    'search_conversations',
+    // Reading & Stats (3)
+    'reading_queue',
+    'reading_stats',
+    'knowledge_stats',
+    // Organization (3)
+    'manage_tags',
+    'categorize_note',
+    'mark_content',
+    // URL Content Saving (3)
+    'save_article',
+    'save_youtube',
+    'save_tweet',
   ];
 
   for (const name of ALWAYS_AVAILABLE) {
     matchedToolNames.add(name);
   }
 
-  // English keyword matching adds extra tools (capped at maxTools)
+  // English keyword matching adds extra specialized tools (capped at maxTools)
   for (const category of TOOL_CATEGORIES) {
     for (const keyword of category.keywords) {
       if (keyword.test(messageLower)) {

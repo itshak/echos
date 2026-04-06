@@ -365,9 +365,8 @@ export async function streamAgentResponse(
   const now = new Date();
   const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
-  // Tool selection: 13 essential tools always available + keyword bonus for English
-  // Real tools avg ~644 chars each, 48 tools = ~13,625 TPM (over 8K limit)
-  // With 13 essential tools: ~2,980 + 5,000 = ~7,980 TPM ✅
+  // Tool selection: 25 essential tools always available + keyword bonus for English
+  // 25 tools (~4,000) + system (~900) + max_completion (1,024) + history (~2,000) = ~7,924 TPM ✅
   const allTools = agent.state.tools;
   if (allTools.length > 0) {
     const selected = selectToolsForMessage(allTools, prompt);

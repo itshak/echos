@@ -35,6 +35,20 @@ export async function transcribeWithRetry(
   throw new Error('unreachable');
 }
 
-export { createSttClient } from './factory.js';
+export { createSttClient, probeSttProviders } from './factory.js';
 export { OpenAICompatibleClient } from './openai-compatible-client.js';
 export { LocalWhisperClient } from './local-whisper-client.js';
+export {
+  STT_PROVIDERS,
+  detectProviderFromKey,
+  detectProviderFromModel,
+  detectProviderFromUrl,
+  getProviderInfo,
+  getProviderIds,
+  getCloudProviders,
+  getProbeableProviders,
+  probeProvider,
+  loadCachedProvider,
+  saveCachedProvider,
+} from './registry.js';
+export type { SttProviderInfo } from './registry.js';

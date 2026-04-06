@@ -28,7 +28,7 @@ async function main(): Promise<void> {
 
   const storage = await initStorage(config, logger);
 
-  const sttClient: SpeechToTextClient | undefined = createSttClient(config);
+  const sttClient: SpeechToTextClient | undefined = await createSttClient(config);
   if (sttClient) {
     logger.info({ provider: config.sttProvider, model: config.sttModel }, 'STT client created');
   } else {

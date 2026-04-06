@@ -49,7 +49,20 @@ export const configSchema = z
     ),
 
     // STT (Speech-to-Text) provider configuration
-    sttProvider: z.enum(['openai-compatible', 'local']).default('openai-compatible'),
+    sttProvider: z
+      .enum([
+        'auto',
+        'openai',
+        'groq',
+        'together',
+        'siliconflow',
+        'deepinfra',
+        'fireworks',
+        'huggingface',
+        'openrouter',
+        'local',
+      ])
+      .default('auto'),
     sttApiKey: z.string().optional(),
     sttBaseUrl: z.string().url().optional(),
     sttModel: z.string().default('whisper-1'),

@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { createSttClient } from './factory.js';
+import { createSttClient, probeSttProviders } from './factory.js';
+import { transcribeWithRetry } from './index.js';
 import { OpenAICompatibleClient } from './openai-compatible-client.js';
 import { LocalWhisperClient } from './local-whisper-client.js';
 import {
@@ -11,8 +12,13 @@ import {
   saveCachedProvider,
   getCloudProviders,
   getProbeableProviders,
+  getProviderInfo,
+  getProviderIds,
+  STT_PROVIDERS,
 } from './registry.js';
 import type { Config } from '@echos/shared';
+import { RateLimitError } from '@echos/shared';
+import { join } from 'node:path';
 
 describe('createSttClient', () => {
   it('returns undefined when no STT config is provided', async () => {
@@ -312,5 +318,425 @@ describe('STT provider cache', () => {
   it('returns undefined for uncached key', () => {
     const loaded = loadCachedProvider('nonexistent-key-xyz');
     expect(loaded).toBeUndefined();
+  });
+
+  it('expires old cache entries', () => {
+    const testKey = 'test-expired-key';
+    saveCachedProvider(testKey, 'openai');
+
+    // Manually set the cache entry to expired
+    const { readFileSync, writeFileSync } = require('node:fs');
+    const cachePath = join(
+      process.env['ECHOS_HOME'] || `${process.env['HOME']}/echos`,
+      'stt-provider-cache.json',
+    );
+    const cache = JSON.parse(readFileSync(cachePath, 'utf-8'));
+    const { createHash } = require('node:crypto');
+    const hash = createHash('sha256').update(testKey).digest('hex');
+    cache[hash].detectedAt = Date.now() - 25 * 60 * 60 * 1000; // 25 hours ago
+    writeFileSync(cachePath, JSON.stringify(cache));
+
+    const loaded = loadCachedProvider(testKey);
+    expect(loaded).toBeUndefined();
+  });
+});
+
+describe('transcribeWithRetry', () => {
+  it('succeeds on first attempt', async () => {
+    const mockClient = {
+      transcribe: vi.fn().mockResolvedValue({
+        text: 'Hello world',
+        provider: 'test',
+        duration: 100,
+      }),
+    };
+
+    const result = await transcribeWithRetry(mockClient as any, {
+      audioBuffer: Buffer.from('audio'),
+      mimeType: 'audio/wav',
+    });
+
+    expect(result.text).toBe('Hello world');
+    expect(mockClient.transcribe).toHaveBeenCalledTimes(1);
+  });
+
+  it('retries on rate limit error', async () => {
+    const error = new RateLimitError('Rate limit exceeded');
+
+    const mockClient = {
+      transcribe: vi
+        .fn()
+        .mockRejectedValueOnce(error)
+        .mockRejectedValueOnce(error)
+        .mockResolvedValueOnce({
+          text: 'Success after retries',
+          provider: 'test',
+          duration: 300,
+        }),
+    };
+
+    const result = await transcribeWithRetry(mockClient as any, {
+      audioBuffer: Buffer.from('audio'),
+      mimeType: 'audio/wav',
+    });
+
+    expect(result.text).toBe('Success after retries');
+    expect(mockClient.transcribe).toHaveBeenCalledTimes(3);
+  });
+
+  it('throws on non-rate-limit errors without retry', async () => {
+    const mockClient = {
+      transcribe: vi.fn().mockRejectedValue(new Error('Network error')),
+    };
+
+    await expect(
+      transcribeWithRetry(mockClient as any, {
+        audioBuffer: Buffer.from('audio'),
+        mimeType: 'audio/wav',
+      }),
+    ).rejects.toThrow('Network error');
+
+    expect(mockClient.transcribe).toHaveBeenCalledTimes(1);
+  });
+
+  it('throws after max retries exhausted', async () => {
+    const error = new RateLimitError('Rate limit exceeded');
+
+    const mockClient = {
+      transcribe: vi.fn().mockRejectedValue(error),
+    };
+
+    await expect(
+      transcribeWithRetry(
+        mockClient as any,
+        {
+          audioBuffer: Buffer.from('audio'),
+          mimeType: 'audio/wav',
+        },
+        2,
+      ),
+    ).rejects.toThrow('Rate limit exceeded');
+
+    expect(mockClient.transcribe).toHaveBeenCalledTimes(3); // initial + 2 retries
+  });
+});
+
+describe('LocalWhisperClient', () => {
+  describe('whisper type detection', () => {
+    it('detects whispercpp-python from wrapper script', () => {
+      const client = new LocalWhisperClient(
+        'python /path/to/whisper-cpp-wrapper.py',
+        'base.en',
+      );
+      expect(client).toBeInstanceOf(LocalWhisperClient);
+    });
+
+    it('detects openai-whisper from whisper command', () => {
+      const client = new LocalWhisperClient('whisper', 'base.en');
+      expect(client).toBeInstanceOf(LocalWhisperClient);
+    });
+
+    it('detects faster-whisper from module', () => {
+      const client = new LocalWhisperClient(
+        'python -m faster_whisper',
+        'base.en',
+      );
+      expect(client).toBeInstanceOf(LocalWhisperClient);
+    });
+
+    it('detects whisper-cpp from whisper-cli', () => {
+      const client = new LocalWhisperClient('whisper-cli', 'base.en');
+      expect(client).toBeInstanceOf(LocalWhisperClient);
+    });
+
+    it('detects generic for unknown commands', () => {
+      const client = new LocalWhisperClient('custom-stt', 'model');
+      expect(client).toBeInstanceOf(LocalWhisperClient);
+    });
+  });
+
+  describe('transcription', () => {
+    it('creates client with whisper-cli command', () => {
+      const client = new LocalWhisperClient('whisper-cli', 'base.en');
+      expect(client).toBeDefined();
+    });
+
+    it('creates client with Python wrapper command', () => {
+      const client = new LocalWhisperClient(
+        'python /path/to/whisper-cpp-wrapper.py',
+        'small.en',
+      );
+      expect(client).toBeDefined();
+    });
+
+    it('creates client with openai-whisper command', () => {
+      const client = new LocalWhisperClient(
+        'whisper --model base.en',
+        'base.en',
+      );
+      expect(client).toBeDefined();
+    });
+
+    it('creates client with custom model directory', () => {
+      const client = new LocalWhisperClient(
+        'whisper-cli',
+        'medium',
+        '/custom/models',
+      );
+      expect(client).toBeDefined();
+    });
+  });
+});
+
+describe('STT provider registry', () => {
+  describe('STT_PROVIDERS', () => {
+    it('contains all expected providers', () => {
+      const ids = Object.keys(STT_PROVIDERS);
+      expect(ids).toContain('openai');
+      expect(ids).toContain('groq');
+      expect(ids).toContain('together');
+      expect(ids).toContain('siliconflow');
+      expect(ids).toContain('deepinfra');
+      expect(ids).toContain('fireworks');
+      expect(ids).toContain('huggingface');
+      expect(ids).toContain('openrouter');
+      expect(ids).toContain('local');
+    });
+
+    it('has valid configuration for each provider', () => {
+      for (const [id, info] of Object.entries(STT_PROVIDERS)) {
+        expect(info.id).toBe(id);
+        expect(info.name).toBeDefined();
+        expect(info.defaultBaseUrl).toBeDefined();
+        expect(info.defaultModel).toBeDefined();
+        expect(info.docsUrl).toBeDefined();
+
+        if (info.keyPrefixConfidence !== 'none') {
+          expect(info.keyPrefixes.length).toBeGreaterThan(0);
+        }
+      }
+    });
+
+    it('has correct key prefix confidence levels', () => {
+      expect(STT_PROVIDERS.openai.keyPrefixConfidence).toBe('high');
+      expect(STT_PROVIDERS.groq.keyPrefixConfidence).toBe('high');
+      expect(STT_PROVIDERS.huggingface.keyPrefixConfidence).toBe('high');
+      expect(STT_PROVIDERS.openrouter.keyPrefixConfidence).toBe('high');
+      expect(STT_PROVIDERS.together.keyPrefixConfidence).toBe('none');
+      expect(STT_PROVIDERS.siliconflow.keyPrefixConfidence).toBe('none');
+    });
+  });
+
+  describe('getProviderInfo', () => {
+    it('returns provider info for valid ID', () => {
+      const info = getProviderInfo('openai');
+      expect(info).toBeDefined();
+      expect(info!.name).toBe('OpenAI');
+    });
+
+    it('returns undefined for invalid ID', () => {
+      const info = getProviderInfo('invalid');
+      expect(info).toBeUndefined();
+    });
+  });
+
+  describe('getProviderIds', () => {
+    it('returns all provider IDs', () => {
+      const ids = getProviderIds();
+      expect(ids.length).toBe(8); // 8 cloud providers + local = 9 total, but getProviderIds excludes local
+      expect(ids).toContain('openai');
+      expect(ids).not.toContain('local'); // getProviderIds excludes local
+    });
+  });
+
+  describe('getCloudProviders', () => {
+    it('returns all cloud providers', () => {
+      const cloud = getCloudProviders();
+      expect(cloud.length).toBe(8);
+      expect(cloud.find((p) => p.id === 'local')).toBeUndefined();
+    });
+  });
+
+  describe('longer prefix matching', () => {
+    it('matches sk-or- before sk-', () => {
+      expect(detectProviderFromKey('sk-or-v1-abc123')).toBe('openrouter');
+      expect(detectProviderFromKey('sk-or-v1-abc123')).not.toBe('openai');
+    });
+  });
+});
+
+describe('STT integration scenarios', () => {
+  it('creates OpenAI client with auto-detection', async () => {
+    const config = {
+      sttProvider: 'auto' as const,
+      sttApiKey: 'sk-proj-abc123',
+    } as Config;
+
+    const client = await createSttClient(config);
+    expect(client).toBeInstanceOf(OpenAICompatibleClient);
+  });
+
+  it('creates Groq client with auto-detection', async () => {
+    const config = {
+      sttProvider: 'auto' as const,
+      sttApiKey: 'gsk_abc123',
+    } as Config;
+
+    const client = await createSttClient(config);
+    expect(client).toBeInstanceOf(OpenAICompatibleClient);
+  });
+
+  it('creates Together AI client with explicit provider', async () => {
+    const config = {
+      sttProvider: 'together' as const,
+      sttApiKey: 'some-opaque-key',
+    } as Config;
+
+    const client = await createSttClient(config);
+    expect(client).toBeInstanceOf(OpenAICompatibleClient);
+  });
+
+  it('creates local whisper client', async () => {
+    const config = {
+      sttProvider: 'local' as const,
+      sttLocalCommand: 'whisper-cli',
+      sttLocalModel: 'base.en',
+    } as Config;
+
+    const client = await createSttClient(config);
+    expect(client).toBeInstanceOf(LocalWhisperClient);
+  });
+
+  it('throws error when local provider configured but no command', async () => {
+    const config = {
+      sttProvider: 'local' as const,
+    } as Config;
+
+    await expect(createSttClient(config)).rejects.toThrow(
+      'STT_LOCAL_COMMAND is required when STT_PROVIDER=local',
+    );
+  });
+
+  it('throws error for unknown explicit provider', async () => {
+    const config = {
+      sttProvider: 'unknown-provider' as const,
+      sttApiKey: 'some-key',
+    } as Config;
+
+    await expect(createSttClient(config)).rejects.toThrow(
+      'Unknown STT provider: unknown-provider',
+    );
+  });
+
+  it('uses fallback OPENAI_API_KEY when no STT_API_KEY', async () => {
+    const config = {
+      sttProvider: 'auto' as const,
+      openaiApiKey: 'sk-fallback-key',
+    } as Config;
+
+    const client = await createSttClient(config);
+    expect(client).toBeInstanceOf(OpenAICompatibleClient);
+  });
+});
+
+describe('STT error handling', () => {
+  it('handles transcription timeout', async () => {
+    const client = new OpenAICompatibleClient('sk-test', 'https://api.test.com/v1', 'test-model');
+
+    globalThis.fetch = vi.fn().mockImplementation(() => {
+      return new Promise((_, reject) => {
+        setTimeout(() => reject(new Error('timeout')), 100);
+      });
+    });
+
+    await expect(
+      client.transcribe({
+        audioBuffer: Buffer.from('audio'),
+        mimeType: 'audio/wav',
+      }),
+    ).rejects.toThrow();
+  });
+
+  it('handles invalid audio format', async () => {
+    const client = new OpenAICompatibleClient('sk-test', 'https://api.test.com/v1', 'test-model');
+
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 400,
+      text: () => Promise.resolve('Invalid audio format'),
+    });
+
+    await expect(
+      client.transcribe({
+        audioBuffer: Buffer.from('invalid-audio'),
+        mimeType: 'audio/xyz',
+      }),
+    ).rejects.toThrow('Transcription failed (400): Invalid audio format');
+  });
+
+  it('handles missing API key', async () => {
+    const config = {
+      sttProvider: 'auto' as const,
+    } as Config;
+
+    const client = await createSttClient(config);
+    expect(client).toBeUndefined();
+  });
+
+  it('handles provider probe failure', async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 401,
+    });
+
+    const together = getProbeableProviders().find((p) => p.id === 'together')!;
+    const result = await probeProvider('invalid-key', together);
+    expect(result).toBe(false);
+  });
+});
+
+describe('STT provider probing edge cases', () => {
+  it('handles empty API key', async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 401,
+    });
+
+    const openai = STT_PROVIDERS.openai;
+    const result = await probeProvider('', openai);
+    expect(result).toBe(false);
+  });
+
+  it('handles malformed URL in provider config', async () => {
+    globalThis.fetch = vi.fn().mockRejectedValue(new Error('Invalid URL'));
+
+    const together = getProbeableProviders().find((p) => p.id === 'together')!;
+    const result = await probeProvider('some-key', together);
+    expect(result).toBe(false);
+  });
+});
+
+describe('probeSttProviders integration', () => {
+  it('returns first successful provider', async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ data: [] }),
+    });
+
+    const result = await probeSttProviders('valid-api-key');
+    expect(result).toBeDefined();
+    expect(result!.provider).toBeDefined();
+    expect(result!.baseUrl).toBeDefined();
+    expect(result!.model).toBeDefined();
+  });
+
+  it('returns undefined when no providers accept the key', async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 401,
+    });
+
+    const result = await probeSttProviders('invalid-api-key');
+    expect(result).toBeUndefined();
   });
 });

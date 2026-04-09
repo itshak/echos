@@ -28,12 +28,67 @@ function spawnAsync(
   });
 }
 
+/**
+ * Local Whisper client for offline speech-to-text.
+ *
+ * Supports multiple Whisper implementations:
+ * - whisper.cpp CLI (whisper-cli, main)
+ * - whispercpp Python package (via wrapper script)
+ * - openai-whisper Python package (official OpenAI Whisper)
+ * - faster-whisper Python package (CTranslate2-based)
+ *
+ * Configuration examples:
+ * - whisper.cpp: STT_LOCAL_COMMAND=whisper-cli
+ * - whispercpp:  STT_LOCAL_COMMAND="python /path/to/whisper-cpp-wrapper.py"
+ * - openai-whisper: STT_LOCAL_COMMAND="whisper --model base.en --output_format txt"
+ * - faster-whisper: STT_LOCAL_COMMAND="python -m faster_whisper --model base.en"
+ */
 export class LocalWhisperClient implements SpeechToTextClient {
+  private whisperType: 'whisper-cpp' | 'whispercpp-python' | 'openai-whisper' | 'faster-whisper' | 'generic';
+
   constructor(
-    private command: string,
+    command: string,
     private model: string,
     private modelDir?: string,
-  ) {}
+  ) {
+    this.whisperType = this.detectWhisperType(command);
+    this.command = command;
+  }
+
+  private detectWhisperType(command: string): LocalWhisperClient['whisperType'] {
+    const normalized = command.toLowerCase().trim();
+
+    // Check for Python-based implementations
+    if (normalized.includes('python') || normalized.endsWith('.py')) {
+      // Check for whispercpp Python package wrapper
+      if (normalized.includes('whisper-cpp-wrapper') || normalized.includes('whispercpp')) {
+        return 'whispercpp-python';
+      }
+      // Check for faster-whisper
+      if (normalized.includes('faster_whisper') || normalized.includes('faster-whisper')) {
+        return 'faster-whisper';
+      }
+      // Generic Python command
+      return 'generic';
+    }
+
+    // Check for openai-whisper CLI (official OpenAI Whisper package)
+    if (normalized.includes('whisper ') || normalized === 'whisper') {
+      return 'openai-whisper';
+    }
+
+    // Check for whisper.cpp CLI
+    if (
+      normalized.includes('whisper-cli') ||
+      normalized.includes('main') ||
+      normalized.includes('whisper.cpp')
+    ) {
+      return 'whisper-cpp';
+    }
+
+    // Default to generic
+    return 'generic';
+  }
 
   async transcribe({
     audioBuffer,
@@ -84,22 +139,96 @@ export class LocalWhisperClient implements SpeechToTextClient {
   }
 
   private async runTranscription(audioPath: string, language?: string): Promise<string> {
-    const isPythonScript = this.command.endsWith('.py') || this.command.includes('python');
-
-    if (isPythonScript) {
-      const parts = this.command.trim().split(/\s+/);
-      const cmd = parts[0]!;
-      const scriptArgs = parts.slice(1);
-      const args = [...scriptArgs, '-f', audioPath];
-      if (this.model) args.push('-m', this.model);
-      if (language) args.push('-l', language);
-      if (this.modelDir) {
-        args.push('-o', this.modelDir);
-      }
-      const { stdout } = await spawnAsync(cmd, args);
-      return stdout.trim();
+    switch (this.whisperType) {
+      case 'whispercpp-python':
+        return this.runWhisperCppPython(audioPath, language);
+      case 'openai-whisper':
+        return this.runOpenAiWhisper(audioPath, language);
+      case 'faster-whisper':
+        return this.runFasterWhisper(audioPath, language);
+      case 'whisper-cpp':
+        return this.runWhisperCpp(audioPath, language);
+      case 'generic':
+      default:
+        return this.runGenericCommand(audioPath, language);
     }
+  }
 
+  /**
+   * Run whispercpp Python package via wrapper script.
+   * Command: python /path/to/whisper-cpp-wrapper.py
+   */
+  private async runWhisperCppPython(audioPath: string, language?: string): Promise<string> {
+    const parts = this.command.trim().split(/\s+/);
+    const cmd = parts[0]!;
+    const scriptArgs = parts.slice(1);
+    const args = [...scriptArgs, '-f', audioPath];
+    if (this.model) args.push('-m', this.model);
+    if (language) args.push('-l', language);
+    if (this.modelDir) args.push('-o', this.modelDir);
+    const { stdout } = await spawnAsync(cmd, args);
+    return stdout.trim();
+  }
+
+  /**
+   * Run official OpenAI Whisper Python package.
+   * Command: whisper --model base.en --output_format txt
+   */
+  private async runOpenAiWhisper(audioPath: string, language?: string): Promise<string> {
+    const parts = this.command.trim().split(/\s+/);
+    const cmd = parts[0]!;
+    const baseArgs = parts.slice(1);
+
+    const args = [...baseArgs];
+    // Add model if not already specified
+    if (!baseArgs.some((a) => a.startsWith('--model') || a.startsWith('-m'))) {
+      args.push('--model', this.model);
+    }
+    // Ensure output format is text
+    if (!baseArgs.includes('--output_format')) {
+      args.push('--output_format', 'txt');
+    }
+    // Add language if specified
+    if (language && !baseArgs.includes('--language')) {
+      args.push('--language', language);
+    }
+    // Add audio file
+    args.push(audioPath);
+
+    const { stdout } = await spawnAsync(cmd, args);
+    return stdout.trim();
+  }
+
+  /**
+   * Run faster-whisper Python package.
+   * Command: python -m faster_whisper --model base.en
+   */
+  private async runFasterWhisper(audioPath: string, language?: string): Promise<string> {
+    const parts = this.command.trim().split(/\s+/);
+    const cmd = parts[0]!;
+    const baseArgs = parts.slice(1);
+
+    const args = [...baseArgs];
+    // Add model if not already specified
+    if (!baseArgs.some((a) => a.startsWith('--model') || a.startsWith('-m'))) {
+      args.push('--model', this.model);
+    }
+    // Add language if specified
+    if (language && !baseArgs.includes('--language')) {
+      args.push('--language', language);
+    }
+    // Add audio file
+    args.push(audioPath);
+
+    const { stdout } = await spawnAsync(cmd, args);
+    return stdout.trim();
+  }
+
+  /**
+   * Run whisper.cpp CLI (whisper-cli, main).
+   * Command: whisper-cli or /path/to/main
+   */
+  private async runWhisperCpp(audioPath: string, language?: string): Promise<string> {
     const modelPath = `${this.modelDir ?? '/usr/local/share/whisper.cpp/models'}/${this.model}.bin`;
     const args = ['-m', modelPath, '-f', audioPath, '-otxt'];
     if (language) args.push('-l', language);
@@ -108,5 +237,21 @@ export class LocalWhisperClient implements SpeechToTextClient {
 
     const txtPath = `${audioPath}.txt`;
     return (await readFile(txtPath, 'utf-8')).trim();
+  }
+
+  /**
+   * Run a generic command with the audio file path.
+   * The command should output transcription to stdout.
+   */
+  private async runGenericCommand(audioPath: string, language?: string): Promise<string> {
+    const parts = this.command.trim().split(/\s+/);
+    const cmd = parts[0]!;
+    const baseArgs = parts.slice(1);
+
+    const args = [...baseArgs, audioPath];
+    if (language) args.push('--language', language);
+
+    const { stdout } = await spawnAsync(cmd, args);
+    return stdout.trim();
   }
 }

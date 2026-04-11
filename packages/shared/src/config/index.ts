@@ -123,43 +123,46 @@ export const configSchema = z
       .default('false')
       .transform((s) => s === 'true'),
 
-    // Update checker
-    disableUpdateCheck: z
-      .string()
-      .default('false')
-      .transform((s) => s === 'true'),
+  // MCP Server
+  enableMcp: z
+    .string()
+    .default('false')
+    .transform((s) => s === 'true'),
+  mcpPort: z.coerce.number().int().positive().default(3939),
+  mcpApiKey: z.string().optional(),
 
-    // Backup
-    backupEnabled: z
-      .string()
-      .default('true')
-      .transform((s) => s === 'true'),
-    backupCron: z.string().default('0 2 * * *').refine(isValidCron, {
-      message: 'BACKUP_CRON must be a valid 5-field cron expression (e.g. "0 2 * * *")',
-    }),
-    backupDir: z.string().default(join(ECHOS_HOME, 'backups')),
-    backupRetentionCount: z.coerce.number().int().positive().default(7),
-  })
-  .superRefine((data, ctx) => {
-    // Note: we intentionally do NOT validate that the API key matches DEFAULT_MODEL's provider here.
-    // defaultModel has a schema-level default ('claude-haiku-4-5-20251001'), so we cannot distinguish
-    // "user didn't set DEFAULT_MODEL" from "user set it to the default value" after parsing.
-    // Mismatched key+model combos are caught at agent creation by pickApiKey() with a clear error.
-    if (!data.anthropicApiKey && !data.llmApiKey) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'At least one of ANTHROPIC_API_KEY or LLM_API_KEY must be set',
-        path: ['anthropicApiKey'],
-      });
-    }
-    if (data.llmBaseUrl && !data.llmApiKey) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'LLM_API_KEY must be set when LLM_BASE_URL is provided',
-        path: ['llmApiKey'],
-      });
-    }
-  });
+  // Backup
+  backupEnabled: z
+    .string()
+    .default('true')
+    .transform((s) => s === 'true'),
+  backupCron: z
+    .string()
+    .default('0 2 * * *')
+    .refine(isValidCron, { message: 'BACKUP_CRON must be a valid 5-field cron expression (e.g. "0 2 * * *")' }),
+  backupDir: z.string().default(join(ECHOS_HOME, 'backups')),
+  backupRetentionCount: z.coerce.number().int().positive().default(7),
+})
+.superRefine((data, ctx) => {
+  // Note: we intentionally do NOT validate that the API key matches DEFAULT_MODEL's provider here.
+  // defaultModel has a schema-level default ('claude-haiku-4-5-20251001'), so we cannot distinguish
+  // "user didn't set DEFAULT_MODEL" from "user set it to the default value" after parsing.
+  // Mismatched key+model combos are caught at agent creation by pickApiKey() with a clear error.
+  if (!data.anthropicApiKey && !data.llmApiKey) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'At least one of ANTHROPIC_API_KEY or LLM_API_KEY must be set',
+      path: ['anthropicApiKey'],
+    });
+  }
+  if (data.llmBaseUrl && !data.llmApiKey) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'LLM_API_KEY must be set when LLM_BASE_URL is provided',
+      path: ['llmApiKey'],
+    });
+  }
+});
 
 export type Config = z.infer<typeof configSchema>;
 
@@ -205,7 +208,9 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     thinkingLevel: env['THINKING_LEVEL'],
     cacheRetention: env['CACHE_RETENTION'],
     logLlmPayloads: env['LOG_LLM_PAYLOADS'],
-    disableUpdateCheck: env['DISABLE_UPDATE_CHECK'],
+    enableMcp: env['ENABLE_MCP'],
+    mcpPort: env['MCP_PORT'],
+    mcpApiKey: env['MCP_API_KEY'],
     backupEnabled: env['BACKUP_ENABLED'],
     backupCron: env['BACKUP_CRON'],
     backupDir: env['BACKUP_DIR'] || join(echosHome, 'backups'),

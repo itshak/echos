@@ -75,7 +75,8 @@
         "images",
         "categorization",
         "knowledge-import",
-        "scheduler"
+        "scheduler",
+        "mcp-server"
       ]
     },
     {
@@ -84,7 +85,8 @@
         "security",
         "remote-access",
         "oracle-cloud-vault",
-        "releasing"
+        "releasing",
+        "benchmarks"
       ]
     }
   ]

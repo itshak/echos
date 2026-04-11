@@ -72,3 +72,4 @@ export {
   createSttClient,
   probeSttProviders,
 } from './stt/index.js';
+export { createMcpServer, type McpServerDeps, type McpServerOptions, type McpAdapter } from './mcp/index.js';

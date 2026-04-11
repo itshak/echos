@@ -75,13 +75,43 @@ The only outbound calls are to the AI APIs you configure — and only when you a
 
 **Capture without friction.** Text, URLs, voice messages, photos — through Telegram, the terminal, or the web. It figures out what to do with them.
 
-**Search that actually understands you.** Not keyword matching. Hybrid full-text and semantic search: ask it a question the way you'd ask a person, and it finds what you meant.
+**Search that actually understands you.** Not keyword matching. Hybrid full-text and semantic search with temporal decay, hotness scoring, and optional AI reranking: ask it a question the way you'd ask a person, and it finds what you meant. [See benchmark results →](https://docs.echos.sh/benchmarks)
 
 **Write in your voice.** Tell it to write a blog post, a thread, an email. It reads your notes for source material and matches the way you actually write — not generic AI prose.
 
 **Obsidian-compatible, always.** Every note is a plain `.md` file. Open `$ECHOS_HOME/knowledge` (default: `~/echos/knowledge`) in Obsidian and your entire knowledge base is right there. Live sync, bidirectional.
 
 **Remembers how you want it to talk.** Tell it to be concise, warmer, more technical. It adapts immediately and stays that way.
+
+---
+
+## How EchOS Compares
+
+| Feature | 🔮 EchOS | 💎 Obsidian + AI | 📋 Notion AI | 🧠 Mem | 🍎 Apple Notes |
+|---|:---:|:---:|:---:|:---:|:---:|
+| 🏠 Runs locally | ✅ | ✅ | ❌ | ❌ | ❌ |
+| 💾 Local storage | ✅ | ✅ | ❌ | ❌ | 🟡 |
+| 🤖 Agent-driven | ✅ | ❌ | ❌ | 🟡 | ❌ |
+| ✈️ Telegram interface | ✅ | ❌ | ❌ | ❌ | ❌ |
+| 💻 CLI | ✅ | 🟡 | ❌ | ❌ | ❌ |
+| 🔌 Plugin system | ✅ | ✅ | 🟡 | ❌ | ❌ |
+| 🔍 Semantic search | ✅ | 🟡 | 🟡 | ✅ | ❌ |
+| 🕸️ Knowledge graph | 🟡 | ✅ | ❌ | ❌ | ❌ |
+| 🔗 MCP server | ✅ | 🟡 | ❌ | ❌ | ❌ |
+| 🎤 Voice input | ✅ | 🟡 | ❌ | ❌ | 🟡 |
+| 📎 Content capture (URL/YouTube) | ✅ | 🟡 | 🟡 | 🟡 | 🟡 |
+| 📄 Plain markdown files | ✅ | ✅ | ❌ | ❌ | ❌ |
+| 💎 Obsidian compatible | ✅ | ✅ | ❌ | ❌ | ❌ |
+
+Legend: ✅ = yes, ❌ = no, 🟡 = partial support via plugins or workarounds
+
+**Choose Obsidian + AI plugins** if you want a mature, polished UI with a large plugin ecosystem and you're happy to configure things yourself. EchOS trades Obsidian's graph view and rich editor for a conversational agent that captures and organizes for you automatically.
+
+**Choose Notion AI** if you need team collaboration, structured databases, and don't mind cloud storage. EchOS is intentionally single-user and keeps everything local.
+
+**Choose Mem** if you want zero-setup, cloud-native AI notes without any self-hosting. EchOS requires a server but gives you full data ownership in return.
+
+**Choose Apple Notes** if you're deep in the Apple ecosystem and want something that just works without any configuration. EchOS is for people who want a programmable, AI-driven knowledge layer they fully control.
 
 ---
 
@@ -127,6 +157,7 @@ Everything you need to go deeper is at **[docs.echos.sh](https://docs.echos.sh)*
 | [Architecture](https://docs.echos.sh/architecture) | How the pieces fit together |
 | [Deployment](https://docs.echos.sh/deployment) | VPS, Docker, nginx, systemd |
 | [Security](https://docs.echos.sh/security) | What EchOS does and doesn't do with your data |
+| [MCP Server](https://docs.echos.sh/mcp-server) | Connect Claude Code, Cursor, and other AI tools |
 | [Knowledge Import](https://docs.echos.sh/knowledge-import) | Bring in your Obsidian vault or Notion export |
 | [Writing](https://docs.echos.sh/writing) | Voice profiles and content generation |
 | [Plugins](https://docs.echos.sh/plugins) | YouTube, articles, and building your own |

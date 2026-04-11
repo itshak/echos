@@ -3,6 +3,7 @@ import type { SearchOptions, SearchResult, Note, NoteMetadata } from '@echos/sha
 import type { SqliteStorage, NoteRow, FtsOptions } from './sqlite.js';
 import type { VectorStorage, VectorSearchResult } from './vectordb.js';
 import type { MarkdownStorage } from './markdown.js';
+import { rerank } from './reranker.js';
 
 export interface SearchService {
   keyword(opts: SearchOptions): SearchResult[];
@@ -11,6 +12,40 @@ export interface SearchService {
 }
 
 const RRF_K = 60; // Reciprocal rank fusion constant
+const TEMPORAL_DECAY_DEFAULT_HALF_LIFE = 90; // days
+const HOTNESS_WEIGHT = 0.15;
+
+/**
+ * Exponential temporal decay factor.
+ * Returns 1.0 for a note created now, decaying toward 0 as the note ages.
+ * At `halfLifeDays` the factor is 0.5; at 2x half-life it's 0.25, etc.
+ *
+ * Inputs are clamped for safety:
+ * - Invalid or future `createdAt` → treated as age 0 (factor = 1.0)
+ * - `halfLifeDays` must be > 0; values ≤ 0 are clamped to 1 day
+ */
+export function computeTemporalDecay(createdAt: string, halfLifeDays: number): number {
+  const safeHalfLife = Math.max(halfLifeDays, 1);
+  const ts = new Date(createdAt).getTime();
+  const ageDays = Number.isFinite(ts) ? Math.max((Date.now() - ts) / (1000 * 60 * 60 * 24), 0) : 0;
+  return Math.pow(2, -ageDays / safeHalfLife);
+}
+
+/**
+ * Sigmoid-shaped hotness factor based on retrieval count and recency of last access.
+ * - sigmoid(log1p(n)) maps retrieval count to [0, 1) — saturates slowly
+ * - multiplied by temporal decay of last access so stale popularity fades
+ */
+export function computeHotnessBoost(
+  retrievalCount: number,
+  lastAccessed: string,
+  halfLifeDays: number,
+): number {
+  const x = Math.log1p(retrievalCount);
+  const sigmoid = 1 / (1 + Math.exp(-x));
+  const recency = computeTemporalDecay(lastAccessed, halfLifeDays);
+  return sigmoid * recency;
+}
 
 function noteRowToNote(row: NoteRow): Note {
   const metadata: NoteMetadata = {
@@ -61,11 +96,16 @@ function reciprocalRankFusion(
     .sort((a, b) => b.score - a.score);
 }
 
+export interface SearchServiceConfig {
+  anthropicApiKey?: string;
+}
+
 export function createSearchService(
   sqlite: SqliteStorage,
   vectorDb: VectorStorage,
   mdStorage: MarkdownStorage,
   logger: Logger,
+  config: SearchServiceConfig = {},
 ): SearchService {
   return {
     keyword(opts: SearchOptions): SearchResult[] {
@@ -120,17 +160,72 @@ export function createSearchService(
       // Fuse rankings
       const fused = reciprocalRankFusion(ftsRanked, vectorRanked);
 
-      // Resolve notes (exclude soft-deleted)
-      const results: SearchResult[] = [];
-      for (const { id, score } of fused.slice(0, limit)) {
+      // Resolve notes from the full candidate set, apply temporal decay, then truncate.
+      // Decay must be applied before slicing because it can change relative ordering:
+      // a recent-but-lower-RRF note may overtake an older higher-RRF note after decay.
+      const applyDecay = opts.temporalDecay !== false;
+      const applyHotness = opts.hotnessBoost !== false;
+      const halfLife = opts.decayHalfLifeDays ?? TEMPORAL_DECAY_DEFAULT_HALF_LIFE;
+
+      // Resolve all candidate rows first so we can batch-fetch hotness data.
+      const resolvedCandidates: Array<{ noteRow: NoteRow; score: number }> = [];
+      for (const { id, score } of fused) {
         const noteRow = sqlite.getNote(id);
         if (!noteRow) continue;
         if (noteRow.status === 'deleted') continue;
-        results.push(noteRowToSearchResult(noteRow, score, mdStorage, logger));
+        resolvedCandidates.push({ noteRow, score });
+      }
+
+      // Batch-fetch hotness data for all candidates in one query.
+      const candidateIds = resolvedCandidates.map(({ noteRow }) => noteRow.id);
+      const hotnessMap = applyHotness ? sqlite.getHotness(candidateIds) : new Map<string, { retrievalCount: number; lastAccessed: string }>();
+
+      const candidates: SearchResult[] = [];
+      for (const { noteRow, score } of resolvedCandidates) {
+        let finalScore = applyDecay
+          ? score * computeTemporalDecay(noteRow.created, halfLife)
+          : score;
+
+        if (applyHotness) {
+          const hotness = hotnessMap.get(noteRow.id);
+          if (hotness) {
+            finalScore *= 1 + HOTNESS_WEIGHT * computeHotnessBoost(hotness.retrievalCount, hotness.lastAccessed, halfLife);
+          }
+        }
+
+        candidates.push(noteRowToSearchResult(noteRow, finalScore, mdStorage, logger));
+      }
+
+      // Sort by final score and take top `limit`
+      candidates.sort((a, b) => b.score - a.score);
+      const sliced = candidates.slice(0, limit);
+
+      // Optional reranking stage — uses Claude as a cross-encoder for highest-quality relevance scoring.
+      // Off by default (adds one API call per search). Requires anthropicApiKey to be configured.
+      let results = sliced;
+      let rerankApplied = false;
+      if (opts.rerank && config.anthropicApiKey) {
+        results = await rerank(opts.query, sliced, config.anthropicApiKey, logger);
+        rerankApplied = true;
+      } else if (opts.rerank && !config.anthropicApiKey) {
+        logger.warn({ query: opts.query }, 'Rerank requested but no anthropicApiKey configured — skipping');
+      }
+
+      // Record access unconditionally: hotness data is always collected even
+      // when hotnessBoost is disabled, so future searches can benefit from it.
+      for (const r of results) {
+        try {
+          sqlite.recordAccess(r.note.metadata.id);
+        } catch (error: unknown) {
+          logger.warn(
+            { query: opts.query, noteId: r.note.metadata.id, error },
+            'Failed to record note access during hybrid search',
+          );
+        }
       }
 
       logger.debug(
-        { query: opts.query, ftsCount: ftsRows.length, vectorCount: vectorResults.length, resultCount: results.length },
+        { query: opts.query, ftsCount: ftsRows.length, vectorCount: vectorResults.length, resultCount: results.length, temporalDecay: applyDecay, hotnessBoost: applyHotness, rerankRequested: opts.rerank ?? false, rerankApplied },
         'Hybrid search',
       );
       return results;

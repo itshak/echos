@@ -57,21 +57,11 @@ export function createCategorizeNoteTool(deps: CategorizeNoteToolDeps): AgentToo
           (model.provider as string) === 'anthropic'
             ? (deps.anthropicApiKey ?? '')
             : (deps.llmApiKey ?? '');
-        const vocabulary = deps.sqlite.getTopTagsWithCounts(50);
-        const result = await categorizeContent(
-          noteRow.title,
-          noteRow.content,
-          mode,
-          apiKey,
-          deps.logger,
-          undefined,
-          deps.modelId,
-          deps.llmBaseUrl,
-          vocabulary,
-        );
 
-        // Parse existing note - fall back to SQLite content if file is missing
+        // Parse existing note first — disk is source of truth for content and metadata
         const existingNote = deps.markdown.read(noteRow.filePath);
+        // Prefer on-disk content as source of truth; fall back to SQLite if the file is missing
+        const noteContent = existingNote?.content ?? noteRow.content;
         const oldCategory = existingNote?.metadata.category ?? noteRow.category;
         const existingMetadata = existingNote?.metadata ?? {
           id: noteRow.id,
@@ -83,6 +73,19 @@ export function createCategorizeNoteTool(deps: CategorizeNoteToolDeps): AgentToo
           links: noteRow.links ? noteRow.links.split(',').filter(Boolean) : [],
           category: noteRow.category,
         };
+
+        const vocabulary = deps.sqlite.getTopTagsWithCounts(50);
+        const result = await categorizeContent(
+          existingMetadata.title,
+          noteContent,
+          mode,
+          apiKey,
+          deps.logger,
+          undefined,
+          deps.modelId,
+          deps.llmBaseUrl,
+          vocabulary,
+        );
 
         // Update metadata with categorization results
         const metadata = {
@@ -96,34 +99,34 @@ export function createCategorizeNoteTool(deps: CategorizeNoteToolDeps): AgentToo
         // If category changed, move the file to the new directory
         let savedFilePath: string;
         if (result.category !== oldCategory || !existingNote) {
-          savedFilePath = deps.markdown.save(metadata, noteRow.content);
+          savedFilePath = deps.markdown.save(metadata, noteContent);
           if (existingNote) {
             deps.markdown.remove(noteRow.filePath);
           }
         } else {
-          deps.markdown.update(noteRow.filePath, metadata, noteRow.content);
+          deps.markdown.update(noteRow.filePath, metadata, noteContent);
           savedFilePath = noteRow.filePath;
         }
 
-        deps.sqlite.upsertNote(metadata, noteRow.content, savedFilePath);
+        deps.sqlite.upsertNote(metadata, noteContent, savedFilePath);
 
         // Update vector store — keep the vector for reuse in link suggestions below
         let noteVector: number[] | undefined;
         try {
-          const embedText = `${noteRow.title}\n\n${noteRow.content}`;
+          const embedText = `${metadata.title}\n\n${noteContent}`;
           noteVector = await deps.generateEmbedding(embedText);
           await deps.vectorDb.upsert({
             id: params.noteId,
             text: embedText,
             vector: noteVector,
             type: noteRow.type,
-            title: noteRow.title,
+            title: metadata.title,
           });
         } catch {
           // Non-fatal
         }
 
-        let responseText = `Categorized note "${noteRow.title}" (${mode} mode)\n`;
+        let responseText = `Categorized note "${metadata.title}" (${mode} mode)\n`;
         responseText += `Category: ${result.category}\n`;
         responseText += `Tags: [${result.tags.join(', ')}]`;
 

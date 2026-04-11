@@ -1454,3 +1454,447 @@ Split monolithic files and automate plugin registration boilerplate to reduce me
 - Adding a new plugin no longer requires any Dockerfile edit
 
 **Dependencies:** 9.06 (the Dockerfile should reflect the same "auto-discover plugins" philosophy; do this after the codegen script so both follow the same convention)
+
+---
+
+## Phase 10: Search Pipeline Intelligence
+
+Upgrade the hybrid search pipeline with temporal awareness, access-frequency boosting, optional reranking, and a reproducible benchmark suite to measure improvements.
+
+### 10.01 — Temporal Decay Scoring
+
+**Description:** Notes saved yesterday should rank higher than notes saved a year ago, all else being equal. Add an exponential temporal decay factor to the search scoring pipeline. The decay is applied _after_ RRF fusion so it modulates the combined score rather than biasing a single retrieval leg. Configurable half-life (default 90 days) lets users tune how aggressively recency matters.
+
+**Files to modify:**
+
+- `packages/core/src/storage/search.ts` — Add a `temporalDecay(createdAt: string, halfLifeDays: number): number` helper that returns `Math.pow(2, -ageDays / halfLifeDays)`. In `hybrid()`, after RRF fusion, multiply each result's score by its temporal decay factor. Add optional `temporalDecay?: boolean` (default `true`) and `decayHalfLifeDays?: number` (default `90`) to `SearchOptions`.
+- `packages/shared/src/types/` — Extend `SearchOptions` interface with `temporalDecay?: boolean` and `decayHalfLifeDays?: number`.
+- `packages/core/src/agent/tools/search-knowledge.ts` — Expose `temporalDecay` as an optional boolean parameter (default `true`). This lets the agent or user disable decay when doing archival searches ("find my oldest notes about X").
+
+**Acceptance criteria:**
+
+- A note created today scores higher than an identical-content note from 6 months ago (with default half-life)
+- Setting `temporalDecay: false` disables the factor entirely (scores match pre-change behavior)
+- Half-life is configurable per query
+- Existing search tests still pass (temporal decay is additive, not breaking)
+- `pnpm -r build` passes
+
+**Dependencies:** None
+
+---
+
+### 10.02 — Hotness Scoring
+
+**Description:** Notes that are frequently retrieved should get a search boost — the "hotness" signal. Track how many times each note appears in search results (retrieval count) and when it was last accessed. Apply a hotness factor to search scores: `sigmoid(log1p(retrievalCount)) * temporalDecay(lastAccessed)`. This creates a virtuous cycle where useful notes surface faster.
+
+**Files to create:**
+
+- `packages/core/src/storage/sqlite-hotness.ts` — New module:
+  - Schema: `note_hotness` table (`note_id TEXT PRIMARY KEY, retrieval_count INTEGER DEFAULT 0, last_accessed TEXT`)
+  - `recordAccess(noteId: string): void` — Increment `retrieval_count`, update `last_accessed` to now. Use `INSERT OR REPLACE` with coalesce for atomic upsert.
+  - `getHotness(noteIds: string[]): Map<string, { retrievalCount: number; lastAccessed: string }>` — Batch lookup for scoring.
+  - `getTopHot(limit: number): HotnessRow[]` — For analytics/debugging.
+
+**Files to modify:**
+
+- `packages/core/src/storage/sqlite-schema.ts` — Add `note_hotness` table creation to schema migrations.
+- `packages/core/src/storage/sqlite.ts` — Import and expose hotness functions.
+- `packages/core/src/storage/search.ts` — After RRF fusion (and after temporal decay from 10.01 if present), apply hotness boost: `score *= (1 + hotnessWeight * sigmoid(log1p(retrievalCount)))` where `hotnessWeight` defaults to `0.15`. After search completes, call `recordAccess()` for all returned note IDs. Add `hotnessBoost?: boolean` (default `true`) to `SearchOptions`.
+- `packages/core/src/agent/tools/search-knowledge.ts` — No parameter change needed (hotness is on by default, no user-facing toggle — it just works).
+
+**Acceptance criteria:**
+
+- Every search result triggers an access count increment
+- Notes retrieved 50 times score visibly higher than notes retrieved once (given similar content relevance)
+- Hotness decays with time since last access (a note popular 6 months ago doesn't dominate)
+- `getTopHot()` returns the most frequently accessed notes
+- Disabling via `hotnessBoost: false` in `SearchOptions` restores pre-change scoring
+- `pnpm -r build` passes
+
+**Dependencies:** 10.01 (temporal decay helper is reused for access recency)
+
+---
+
+### 10.03 — Cross-Encoder Reranking Stage
+
+**Description:** Add an optional reranking stage to the search pipeline. After RRF fusion + decay + hotness scoring produces a candidate set, send the top N candidates to a cross-encoder model for precise relevance scoring. This is the highest-quality signal but also the most expensive (one LLM call per search), so it's off by default and opt-in via a search parameter. Uses the Anthropic API (already a dependency) with a lightweight prompt — no new dependencies needed.
+
+**Files to create:**
+
+- `packages/core/src/storage/reranker.ts` — Reranking module:
+  - `rerank(query: string, candidates: SearchResult[], options: RerankOptions): Promise<SearchResult[]>` — Takes the top `topK` (default 20) candidates, sends to Claude with a scoring prompt ("Rate relevance 0-10 for each candidate to this query"), parses scores, re-sorts. Returns the full list with reranked scores.
+  - `RerankOptions: { topK?: number; model?: string }` — `model` defaults to `claude-haiku-4-5-20251001` (fast, cheap).
+  - Graceful fallback: if the API call fails, return candidates in original order with a warning log.
+
+**Files to modify:**
+
+- `packages/core/src/storage/search.ts` — In `hybrid()`, after all scoring stages, if `rerank: true` is set in options, call `rerank()` on the scored candidates before returning. Add `rerank?: boolean` (default `false`) to `SearchOptions`.
+- `packages/shared/src/types/` — Add `rerank?: boolean` to `SearchOptions`.
+- `packages/core/src/agent/tools/search-knowledge.ts` — Add optional `rerank: boolean` parameter (default `false`). Description: "Enable AI reranking for highest-quality results (slower, uses an API call)".
+
+**Acceptance criteria:**
+
+- With `rerank: false` (default), search behavior is identical to before
+- With `rerank: true`, results are reordered by cross-encoder relevance scores
+- Reranking uses Claude Haiku (fast, cheap) — not the user's configured model
+- If the reranking API call fails, results are returned in original order (graceful degradation)
+- Reranking prompt is minimal and focused (not a heavy synthesis — just "score relevance 0-10")
+- `pnpm -r build` passes
+
+**Dependencies:** 10.01, 10.02 (reranking is the final stage after decay and hotness)
+
+---
+
+### 10.04 — Search Benchmark Suite
+
+**Description:** Create a reproducible benchmark that measures search quality (precision, recall, MRR) across different pipeline configurations and corpus sizes. The benchmark uses a synthetic corpus of notes + a set of test queries with known relevant note IDs. Outputs a JSON report and a human-readable markdown summary. This lets us prove that hybrid search beats keyword-only, that temporal decay helps, and that reranking improves precision.
+
+**Files to create:**
+
+- `benchmarks/search/generate-corpus.ts` — Script that generates a synthetic knowledge base:
+  - 3 scales: small (100 notes), medium (1,000 notes), large (10,000 notes)
+  - Notes span multiple content types (article, note, highlight, conversation)
+  - Diverse topics with controlled overlap (some notes share entities/concepts)
+  - Outputs to `benchmarks/search/fixtures/{scale}/` as markdown files
+
+- `benchmarks/search/queries.json` — Test query set (50+ queries):
+  - Each query has: `query`, `expectedNoteIds[]`, `queryType` (keyword, semantic, multi-hop, temporal, needle-in-haystack)
+  - Queries designed to test different pipeline strengths
+
+- `benchmarks/search/run.ts` — Benchmark runner:
+  - For each scale × pipeline configuration (keyword-only, semantic-only, hybrid, hybrid+decay, hybrid+decay+hotness, hybrid+decay+hotness+rerank):
+    - Load corpus into a temporary LanceDB + SQLite instance
+    - Run all queries
+    - Compute: Precision@5, Recall@10, MRR (Mean Reciprocal Rank), median latency
+  - Output: `benchmarks/search/results/{timestamp}.json`
+
+- `benchmarks/search/report.ts` — Report generator:
+  - Reads latest results JSON
+  - Generates `benchmarks/search/RESULTS.md` with comparison tables and delta analysis
+
+**Files to modify:**
+
+- `package.json` — Add script: `"bench:search": "tsx benchmarks/search/run.ts"`
+
+**Acceptance criteria:**
+
+- `pnpm bench:search` runs end-to-end and produces a results JSON + markdown report
+- Benchmark covers at least 3 corpus sizes and 4 pipeline configurations
+- Metrics include Precision@5, Recall@10, MRR, and latency
+- Results are reproducible (same corpus, same queries, same scores)
+- Hybrid search demonstrably outperforms keyword-only and semantic-only in the report
+- `pnpm -r build` passes (benchmark is not part of the main build, but must compile)
+
+**Dependencies:** 10.01, 10.02, 10.03 (benchmarks test all pipeline stages)
+
+---
+
+## Phase 14: Knowledge Graph & Auto-Curation (Future)
+
+> **Parked.** Entity extraction, knowledge graphs, and contradiction detection are valuable at scale (5,000+ notes) but add ongoing LLM cost and complexity that isn't justified for a personal tool at typical corpus sizes (100s–low 1,000s of notes). Revisit when users hit search quality ceilings. The existing `suggest-links`, `find-similar`, and `explore-graph` tools cover the immediate need.
+
+Build an automatic entity extraction pipeline that turns notes into a queryable knowledge graph, then use that graph to improve search results and detect contradictions.
+
+### 14.01 — Entity Storage Schema
+
+**Description:** Add SQLite tables to store extracted entities, relationships between entities, and facts. This is the data layer that entity extraction (14.02) will populate and that search augmentation (14.03) will query. Designed to support multi-hop graph traversal and contradiction detection.
+
+**Files to create:**
+
+- `packages/core/src/storage/sqlite-entities.ts` — New module with tables and operations:
+  - Schema:
+    - `entities` table (`id TEXT PK, name TEXT, type TEXT, aliases TEXT, first_seen TEXT, last_seen TEXT, mention_count INTEGER DEFAULT 1, UNIQUE(name, type)`)
+    - `entity_mentions` table (`entity_id TEXT, note_id TEXT, context TEXT, PRIMARY KEY(entity_id, note_id)`) — Which notes mention which entities, with surrounding context snippet
+    - `facts` table (`id TEXT PK, entity_id TEXT, predicate TEXT, value TEXT, source_note_id TEXT, confidence REAL DEFAULT 1.0, created TEXT, superseded_by TEXT`) — Extracted factual claims
+    - `relationships` table (`id TEXT PK, source_entity_id TEXT, target_entity_id TEXT, relation_type TEXT, source_note_id TEXT, created TEXT`) — Entity-to-entity relationships
+  - Operations:
+    - `upsertEntity(name, type, aliases?): string` — Insert or increment mention_count, return entity ID
+    - `addMention(entityId, noteId, context): void`
+    - `addFact(entityId, predicate, value, sourceNoteId, confidence?): string`
+    - `addRelationship(sourceEntityId, targetEntityId, relationType, sourceNoteId): string`
+    - `findEntities(query: string): Entity[]` — Fuzzy match by name/alias
+    - `getEntityMentions(entityId: string): NoteReference[]` — All notes mentioning an entity
+    - `getEntityFacts(entityId: string): Fact[]` — All facts for an entity (excluding superseded)
+    - `getRelatedEntities(entityId: string, depth?: number): Entity[]` — Multi-hop traversal (default depth 1, max 3)
+    - `getEntityGraph(noteId: string): { entities: Entity[], relationships: Relationship[] }` — All entities and relationships for a note
+
+**Files to modify:**
+
+- `packages/core/src/storage/sqlite-schema.ts` — Add entity/fact/relationship table creation to schema migrations. Add FTS5 index on `entities(name, aliases)` for fast fuzzy lookup.
+- `packages/core/src/storage/sqlite.ts` — Import and expose entity functions.
+- `packages/core/src/storage/index.ts` — Export entity types and functions.
+
+**Acceptance criteria:**
+
+- All four tables created with proper indexes and foreign key relationships
+- Entity upsert is idempotent (same name+type increments count, doesn't duplicate)
+- Multi-hop traversal works to depth 3
+- Superseded facts are excluded from `getEntityFacts()` by default
+- FTS5 index on entity names enables fast fuzzy search
+- `pnpm -r build` passes
+
+**Dependencies:** None
+
+---
+
+### 14.02 — Auto Entity Extraction
+
+**Description:** Add a background job that processes new/updated notes and extracts entities, facts, and relationships using the LLM. The extractor runs asynchronously after note creation/update — it doesn't block the save path. Uses a structured prompt to get consistent JSON output from Claude.
+
+**Files to create:**
+
+- `packages/core/src/graph/entity-extractor.ts` — Entity extraction module:
+  - `extractEntities(content: string, title: string, noteId: string): Promise<ExtractionResult>` — Sends note content to Claude with a structured extraction prompt. Returns `{ entities: ExtractedEntity[], facts: ExtractedFact[], relationships: ExtractedRelationship[] }`.
+  - Extraction prompt asks for: people, places, organizations, concepts, tools/technologies as entities; factual claims as facts; and relationships between entities.
+  - Uses `claude-haiku-4-5-20251001` by default (fast, cheap for extraction).
+  - Returns empty result on API failure (never blocks or throws).
+
+- `packages/scheduler/src/workers/entity-extraction.ts` — BullMQ processor for `entity_extraction` jobs:
+  - Receives `{ noteId: string }` as job data
+  - Loads note content from SQLite
+  - Calls `extractEntities()`
+  - Stores results via `sqlite-entities.ts` functions
+  - Logs extraction summary (N entities, N facts, N relationships found)
+
+**Files to modify:**
+
+- `packages/core/src/storage/watcher.ts` — After `handleUpsert()` completes (new or changed note), enqueue an `entity_extraction` job with the note ID. Only enqueue if content actually changed (check content hash).
+- `packages/core/src/storage/reconciler.ts` — After reconciliation of new/changed files, enqueue `entity_extraction` jobs for each added/updated note.
+- `packages/scheduler/src/workers/processor.ts` — Register `entity_extraction` in the job router.
+- `packages/scheduler/src/scheduler.ts` — No cron needed (extraction is event-driven, not scheduled).
+
+**Acceptance criteria:**
+
+- Saving a new note automatically enqueues an entity extraction job
+- Updating a note re-extracts entities (old mentions are replaced, not duplicated)
+- Extraction uses Claude Haiku for cost efficiency
+- Extraction failure doesn't affect note save (async, non-blocking)
+- Entities are properly deduplicated (same person mentioned in 10 notes = 1 entity with 10 mentions)
+- `pnpm -r build` passes
+
+**Dependencies:** 14.01 (entity storage schema must exist first)
+
+---
+
+### 14.03 — Entity-Anchored Retrieval
+
+**Description:** Augment the search pipeline with entity-aware retrieval. When a search query mentions a known entity, inject notes that mention that entity into the candidate set — even if they didn't rank highly in vector/keyword search. This is the knowledge graph's payoff: multi-hop queries like "what did I save about the company that Alice works at?" can traverse Alice → Company → notes about Company.
+
+**Files to modify:**
+
+- `packages/core/src/storage/search.ts` — Add a new stage between RRF fusion and temporal decay:
+  1. Extract entity names from the query using `findEntities()` fuzzy match
+  2. For each matched entity, fetch `getEntityMentions()` to get related note IDs
+  3. For entities with relationships, traverse one hop via `getRelatedEntities()` and fetch their mentions too
+  4. Merge entity-sourced notes into the RRF candidate set with a base score (configurable, default `0.3`) — they're guaranteed relevant but scored lower than direct matches
+  5. Deduplicate (notes already in RRF results keep their higher score)
+  - Add `entityAugment?: boolean` (default `true`) to `SearchOptions`
+
+- `packages/shared/src/types/` — Add `entityAugment?: boolean` to `SearchOptions`.
+
+- `packages/core/src/agent/tools/search-knowledge.ts` — No parameter change needed (entity augmentation is on by default). The agent doesn't need to know about it — search just gets smarter.
+
+**Acceptance criteria:**
+
+- Query "what do I know about Alice?" surfaces all notes mentioning Alice (via entity mentions), not just keyword/vector matches
+- Multi-hop works: "Alice's company" finds notes about the company even if they don't mention Alice
+- Entity augmentation doesn't dominate: direct keyword/vector matches still score higher
+- Setting `entityAugment: false` disables the feature
+- Search latency increases by <50ms for entity augmentation (entity lookups are SQLite, not LLM)
+- `pnpm -r build` passes
+
+**Dependencies:** 14.01, 14.02 (entities must be stored before they can augment search)
+
+---
+
+### 14.04 — Contradiction Detection
+
+**Description:** Add a tool that surfaces conflicting facts across the knowledge base. When entity extraction stores facts (e.g., "Alice works at Acme" from note A and "Alice works at Globex" from note B), the system should detect these conflicts. A new agent tool lets the user ask "are there any contradictions in my notes?" and get actionable results.
+
+**Files to create:**
+
+- `packages/core/src/graph/contradiction-detector.ts` — Contradiction detection module:
+  - `findContradictions(entityId?: string): Promise<Contradiction[]>` — For a given entity (or all entities if none specified), find facts with the same entity+predicate but different values where neither is superseded. Returns pairs of conflicting facts with their source notes.
+  - `Contradiction: { entity: Entity, predicate: string, facts: [Fact, Fact], sourceNotes: [string, string] }`
+
+- `packages/core/src/agent/tools/contradictions.ts` — New tool: `find_contradictions`:
+  - Parameters: `entity?: string` (optional — check specific entity or scan all)
+  - Calls `findContradictions()`, formats results as readable text
+  - For each contradiction: shows the entity, the conflicting claims, which notes they came from, and when each was saved (so the user can judge which is more current)
+
+**Files to modify:**
+
+- `packages/core/src/agent/tools/index.ts` — Register `find_contradictions` tool.
+
+**Acceptance criteria:**
+
+- Detects same-predicate different-value conflicts for entities (e.g., two different "works at" values)
+- Results include source note references so the user can resolve conflicts
+- Works for a specific entity or across the entire knowledge base
+- Superseded facts (already resolved) are excluded
+- Handles gracefully when no contradictions exist
+- `pnpm -r build` passes
+
+**Dependencies:** 14.01, 14.02 (needs extracted entities and facts)
+
+---
+
+## Phase 11: MCP Server
+
+Expose EchOS as a Model Context Protocol server so external AI agents (Claude Code, Cursor, Windsurf, etc.) can use your personal knowledge base as context.
+
+### 11.01 — MCP Server Core
+
+**Description:** Create an MCP server that exposes a subset of EchOS agent tools via the Model Context Protocol. This lets any MCP-compatible client (Claude Code, Cursor, etc.) search your knowledge, create notes, and retrieve context from your personal knowledge base. Uses the official `@modelcontextprotocol/sdk` package. The server runs as part of the existing daemon (not a separate process) and listens on a configurable port.
+
+**Files to create:**
+
+- `packages/core/src/mcp/server.ts` — MCP server implementation:
+  - Uses `@modelcontextprotocol/sdk` with Streamable HTTP transport
+  - Registers these tools (mapped from existing agent tools):
+    - `search_knowledge` — Search the knowledge base (hybrid/semantic/keyword)
+    - `create_note` — Create a new note
+    - `get_note` — Retrieve a note by ID
+    - `list_notes` — List notes with filters
+    - `find_similar` — Find semantically similar notes
+    - `knowledge_stats` — Get knowledge base statistics
+    - `recall_knowledge` — Retrieve personal memory by topic
+  - Each MCP tool wraps the existing tool's `execute()` function, translating MCP parameter format to the internal format
+  - Server info: `{ name: "echos", version: <from package.json> }`
+
+- `packages/core/src/mcp/index.ts` — Exports `createMcpServer()` and types.
+
+**Files to modify:**
+
+- `packages/shared/src/config/index.ts` — Add `ENABLE_MCP` (default `false`), `MCP_PORT` (default `3939`), `MCP_API_KEY` (optional, for auth).
+- `packages/core/package.json` — Add `@modelcontextprotocol/sdk` dependency.
+- Root `package.json` — Add dependency if needed for workspace resolution.
+
+**Acceptance criteria:**
+
+- `ENABLE_MCP=true` starts an MCP server on the configured port
+- Claude Code can connect via `mcpServers` config and use `search_knowledge` to query the user's notes
+- MCP tool schemas are properly typed with JSON Schema
+- Server responds to `initialize`, `tools/list`, and `tools/call` MCP methods
+- `ENABLE_MCP=false` (default) does not start the server or load the SDK
+- `pnpm -r build` passes
+
+**Dependencies:** None
+
+---
+
+### 11.02 — MCP Resource Providers
+
+**Description:** Expose EchOS data as MCP resources, not just tools. Resources let MCP clients browse and read notes, tags, and categories without needing to call a tool. This enables richer IDE integrations where the knowledge base appears as a browsable data source.
+
+**Files to create:**
+
+- `packages/core/src/mcp/resources.ts` — MCP resource providers:
+  - `notes://` — List notes as resources. Each note is a resource with URI `notes://{noteId}`, name = title, mimeType = `text/markdown`. Reading the resource returns the note content.
+  - `tags://` — List all tags. Reading a tag returns notes with that tag.
+  - `categories://` — List all categories. Reading a category returns notes in that category.
+  - Resource templates: `notes://{noteId}`, `tags://{tagName}`, `categories://{categoryName}`
+
+**Files to modify:**
+
+- `packages/core/src/mcp/server.ts` — Register resource providers and resource templates. Handle `resources/list`, `resources/read`, `resources/templates/list` MCP methods.
+
+**Acceptance criteria:**
+
+- MCP clients can browse notes, tags, and categories as resources
+- Reading a note resource returns full markdown content with frontmatter
+- Reading a tag returns a list of notes with that tag
+- Resource URIs are stable and predictable
+- `pnpm -r build` passes
+
+**Dependencies:** 11.01 (MCP server must exist)
+
+---
+
+### 11.03 — MCP Authentication & Configuration
+
+**Description:** Add authentication to the MCP server and provide documentation for connecting from popular MCP clients. Authentication uses a bearer token (the same pattern as the web API). Include a configuration guide with copy-paste JSON for Claude Code, Cursor, and generic MCP clients.
+
+**Files to modify:**
+
+- `packages/core/src/mcp/server.ts` — Add bearer token authentication middleware:
+  - If `MCP_API_KEY` is set, require `Authorization: Bearer <token>` on all requests
+  - If `MCP_API_KEY` is not set, allow unauthenticated access (localhost-only use case)
+  - Use timing-safe comparison (same as web API auth)
+  - Return MCP-compliant error responses for auth failures
+
+- `docs/MCP.mdx` — New documentation page:
+  - What the MCP server exposes (tools + resources)
+  - How to enable (`ENABLE_MCP=true` in `.env`)
+  - Configuration examples for Claude Code (`~/.claude.json` mcpServers block), Cursor (`.cursor/mcp.json`), and generic MCP clients
+  - Security considerations (localhost-only vs. remote access, token auth)
+
+- `docs/mint.json` — Add MCP.mdx to the navigation.
+- `README.md` — Add MCP to the feature list and link to docs.
+
+**Acceptance criteria:**
+
+- With `MCP_API_KEY` set, unauthenticated requests are rejected with a clear error
+- With `MCP_API_KEY` unset, requests are accepted (for localhost convenience)
+- Token comparison is timing-safe
+- Documentation includes working copy-paste config for Claude Code and Cursor
+- `pnpm -r build` passes
+
+**Dependencies:** 11.01, 11.02
+
+---
+
+## Phase 12: Positioning & Documentation
+
+Package the improvements from Phases 10-11 into clear, compelling documentation and competitive positioning.
+
+### 12.01 — README Competitive Comparison
+
+**Description:** Add a competitive comparison section to the README that positions EchOS against alternatives. Be honest and specific — show what EchOS does well and where alternatives might be better for different use cases. Include a feature comparison table and a "when to use EchOS vs. X" guide.
+
+**Files to modify:**
+
+- `README.md` — Add a "How EchOS Compares" section after the features section:
+  - Comparison table with columns: Feature | EchOS | Obsidian + AI plugins | Notion AI | Mem | Apple Notes
+  - Rows: Self-hosted, Privacy (local-only), Agent-driven, Telegram interface, CLI, Plugin system, Semantic search, Knowledge graph, MCP server, Voice input, Content capture (URLs/RSS/YouTube), Plain markdown files, Obsidian compatible
+  - Brief "When to choose X" paragraphs for each alternative (be fair — e.g., "Choose Notion AI if you need team collaboration and don't mind cloud storage")
+  - Keep it under 40 lines — tight and scannable
+
+**Acceptance criteria:**
+
+- Comparison table is accurate and honest
+- Alternatives are represented fairly (not strawmanned)
+- Table renders correctly in GitHub markdown
+- Positioning is clear: EchOS is for privacy-conscious individuals who want AI-powered knowledge management they fully control
+
+**Dependencies:** None
+
+---
+
+### 12.02 — Search Quality Documentation
+
+**Description:** Document the search benchmark results from 10.04 in a user-facing page. Show that hybrid search with the full pipeline (decay + hotness + reranking) outperforms simpler approaches. Include the methodology, results, and how users can run the benchmarks themselves.
+
+**Files to create:**
+
+- `docs/BENCHMARKS.mdx` — New documentation page:
+  - Methodology: corpus sizes, query types, pipeline configurations tested
+  - Results: Precision@5, Recall@10, MRR comparison table across configurations
+  - Key findings: which pipeline stages help most and for which query types
+  - How to reproduce: `pnpm bench:search` with configuration options
+  - Honest about limitations: where the pipeline struggles (needle-in-haystack, etc.)
+
+**Files to modify:**
+
+- `docs/mint.json` — Add BENCHMARKS.mdx to navigation.
+- `README.md` — Add a one-liner linking to benchmarks in the search section.
+
+**Acceptance criteria:**
+
+- Benchmark results are presented clearly with comparison tables
+- Methodology is reproducible (reader can run the same benchmarks)
+- Honest about both strengths and weaknesses
+- Page renders correctly in Mintlify
+- `pnpm -r build` passes
+
+**Dependencies:** 10.04 (benchmark suite must exist and have been run)

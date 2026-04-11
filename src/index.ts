@@ -7,6 +7,7 @@ import { loadConfig, createLogger, type InterfaceAdapter } from '@echos/shared';
 import {
   PluginRegistry,
   type AgentDeps,
+  createMcpServer,
   createSttClient,
   type SpeechToTextClient,
 } from '@echos/core';
@@ -106,6 +107,22 @@ async function main(): Promise<void> {
         deleteSchedule: scheduler.deleteSchedule,
       }),
     );
+  }
+
+  if (config.enableMcp) {
+    interfaces.push(createMcpServer(
+      {
+        sqlite: storage.sqlite,
+        markdown: storage.markdown,
+        vectorDb: storage.vectorDb,
+        search: storage.search,
+        generateEmbedding: storage.generateEmbedding,
+        knowledgeDir: config.knowledgeDir,
+        dbPath: config.dbPath,
+        logger,
+      },
+      { port: config.mcpPort, apiKey: config.mcpApiKey },
+    ));
   }
 
   for (const iface of interfaces) await iface.start();
